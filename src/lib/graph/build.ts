@@ -7,6 +7,7 @@ import type { RawGraph } from './types';
 export interface BuildOpts {
   plain?: boolean; // label nodes with their description instead of their name
   coverage?: boolean; // colour by test coverage instead of layer
+  seed?: boolean; // leave circular seed positions (a live worker will lay it out)
 }
 
 const COV = { good: '#7ee787', mid: '#f5a623', bad: '#ff6b6b' };
@@ -78,10 +79,14 @@ export function buildGraph(data: RawGraph, level: 'function' | 'module' = 'funct
     }
   }
 
-  const settings = forceAtlas2.inferSettings(g);
-  forceAtlas2.assign(g, {
-    iterations: g.order > 600 ? 120 : 250,
-    settings: { ...settings, gravity: 1.2, scalingRatio: 12, barnesHutOptimize: g.order > 500 }
-  });
+  // When seeded, leave the circular layout for a live worker to animate from;
+  // otherwise lay it out statically (used by the offline export).
+  if (!opts.seed) {
+    const settings = forceAtlas2.inferSettings(g);
+    forceAtlas2.assign(g, {
+      iterations: g.order > 600 ? 120 : 250,
+      settings: { ...settings, gravity: 1.2, scalingRatio: 12, barnesHutOptimize: g.order > 500 }
+    });
+  }
   return g;
 }

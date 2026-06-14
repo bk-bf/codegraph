@@ -204,15 +204,19 @@
     min-width: 18px;
     text-align: center;
     border-radius: 3px;
-    padding: 0 4px;
+    padding: 0 5px;
     font-size: 11px;
-    background: var(--bg-elev);
+    background: none;
+    border: 1px solid var(--fg-dim);
+    color: var(--fg);
   }
   .tag.error {
     color: #ff6b6b;
+    border-color: #ff6b6b;
   }
   .tag.warn {
     color: var(--accent);
+    border-color: var(--accent);
   }
   .why {
     font-size: 11px;

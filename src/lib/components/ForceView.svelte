@@ -7,11 +7,33 @@
 
   let container: HTMLDivElement | undefined = $state();
   let renderer: Sigma | null = null;
-  let building = $state(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let layout: any = null;
+  let running = $state(false);
   let plain = $state(false);
   let cov = $state(false);
+  let physicsToggle = $state<() => void>(() => {});
   plainLabels.subscribe((v) => (plain = v));
   coverage.subscribe((v) => (cov = v));
+
+  const DIM = '#222831';
+
+  // hover state — read by the reducers passed to Sigma
+  let hovered: string | null = null;
+  let neighbors = new Set<string>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function nodeReducer(node: string, data: any) {
+    if (hovered && node !== hovered && !neighbors.has(node)) return { ...data, color: DIM, label: '' };
+    if (node === hovered) return { ...data, highlighted: true, zIndex: 2 };
+    return data;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function edgeReducer(edge: string, data: any) {
+    if (!hovered || !renderer) return data;
+    return renderer.getGraph().hasExtremity(edge, hovered)
+      ? { ...data, color: '#57c7ff', zIndex: 1 }
+      : { ...data, hidden: true };
+  }
 
   $effect(() => {
     void level;
@@ -20,12 +42,41 @@
     void cov;
     if (!container) return;
     let killed = false;
-    building = true;
+    let settle: ReturnType<typeof setTimeout>;
+
     (async () => {
-      const [{ default: Sigma }, { buildGraph }] = await Promise.all([import('sigma'), import('$lib/graph/build')]);
+      const [{ default: Sigma }, { buildGraph }, fa2, fa2sync] = await Promise.all([
+        import('sigma'),
+        import('$lib/graph/build'),
+        import('graphology-layout-forceatlas2/worker'),
+        import('graphology-layout-forceatlas2')
+      ]);
       if (killed || !container) return;
+      layout?.kill();
       renderer?.kill();
-      const g = buildGraph(graph, level, { plain, coverage: cov });
+
+      const g = buildGraph(graph, level, { plain, coverage: cov, seed: true });
+
+      // ---- live physics worker: animates from the seed, reacts to drops ----
+      const settings = fa2sync.default.inferSettings(g);
+      layout = new fa2.default(g, {
+        settings: { ...settings, gravity: 1.4, scalingRatio: 14, slowDown: 1 + Math.log(g.order) }
+      });
+      const start = () => {
+        if (layout && !layout.isRunning()) {
+          layout.start();
+          running = true;
+        }
+      };
+      const stop = () => {
+        clearTimeout(settle);
+        if (layout?.isRunning()) layout.stop();
+        running = false;
+      };
+      start();
+      settle = setTimeout(stop, g.order > 600 ? 7000 : 4500);
+      physicsToggle = () => (running ? stop() : start());
+
       renderer = new Sigma(g, container, {
         renderLabels: true,
         labelColor: { color: '#d7dce3' },
@@ -33,38 +84,78 @@
         labelRenderedSizeThreshold: level === 'module' ? 6 : 14,
         defaultEdgeColor: '#222a34',
         minCameraRatio: 0.05,
-        maxCameraRatio: 12
+        maxCameraRatio: 12,
+        nodeReducer,
+        edgeReducer
       });
-      renderer.on('clickNode', ({ node }) => {
-        selection.set(level === 'module' ? { type: 'module', module: node } : { type: 'node', id: node });
+
+      // hover highlight
+      renderer.on('enterNode', ({ node }) => {
+        hovered = node;
+        neighbors = new Set(g.neighbors(node));
+        renderer!.refresh({ skipIndexation: true });
       });
+      renderer.on('leaveNode', () => {
+        hovered = null;
+        neighbors = new Set();
+        renderer!.refresh({ skipIndexation: true });
+      });
+      renderer.on('clickNode', ({ node }) =>
+        selection.set(level === 'module' ? { type: 'module', module: node } : { type: 'node', id: node })
+      );
       renderer.on('clickStage', () => selection.set(null));
-      building = false;
+
+      // ---- dragging: pause physics while dragging, kick it on drop ----
+      let dragged: string | null = null;
+      const captor = renderer.getMouseCaptor();
+      renderer.on('downNode', (e) => {
+        dragged = e.node;
+        stop(); // freeze layout so the node follows the cursor
+        if (!renderer!.getCustomBBox()) renderer!.setCustomBBox(renderer!.getBBox());
+      });
+      captor.on('mousemovebody', (e) => {
+        if (!dragged) return;
+        const pos = renderer!.viewportToGraph(e);
+        g.setNodeAttribute(dragged, 'x', pos.x);
+        g.setNodeAttribute(dragged, 'y', pos.y);
+        e.preventSigmaDefault();
+        e.original.preventDefault();
+        e.original.stopPropagation();
+      });
+      captor.on('mouseup', () => {
+        if (!dragged) return;
+        dragged = null;
+        start(); // let neighbours settle around the moved node
+        settle = setTimeout(stop, 1500);
+      });
     })();
+
     return () => {
       killed = true;
+      clearTimeout(settle);
+      layout?.kill();
       renderer?.kill();
+      layout = null;
       renderer = null;
     };
   });
 </script>
 
 <div class="canvas" bind:this={container}></div>
-{#if building}<div class="badge">laying out…</div>{/if}
+<button class="phys" class:on={running} title="Toggle physics simulation" onclick={() => physicsToggle()}>
+  {running ? '❙❙ physics' : '▶ physics'}
+</button>
 
 <style>
   .canvas {
     position: absolute;
     inset: 0;
   }
-  .badge {
+  .phys {
     position: absolute;
     bottom: 12px;
     left: 12px;
-    padding: 4px 10px;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--accent);
+    font-size: 11px;
+    padding: 4px 9px;
   }
 </style>

@@ -21,15 +21,20 @@
   coverage.subscribe((v) => (cov = v));
   let panel = $state<'detail' | 'insights' | 'list'>('detail');
   let listType = $state<ListType>('functions');
-  // Selecting anything flips the panel to detail.
+  let asideOpen = $state(true);
+  // Selecting anything flips the panel to detail and reveals the sidebar.
   selection.subscribe((s) => {
-    if (s) panel = 'detail';
+    if (s) {
+      panel = 'detail';
+      asideOpen = true;
+    }
   });
   function openList(t: ListType) {
-    if (panel === 'list' && listType === t) panel = 'detail';
+    if (panel === 'list' && listType === t && asideOpen) asideOpen = false;
     else {
       listType = t;
       panel = 'list';
+      asideOpen = true;
     }
   }
 
@@ -41,13 +46,14 @@
       if (s.mode) viewMode.set(s.mode);
       if (s.plain) plainLabels.set(true);
       if (s.cov) coverage.set(true);
+      if (s.asideOpen === false) asideOpen = false;
     } catch {
       /* ignore */
     }
   });
   $effect(() => {
     try {
-      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov }));
+      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov, asideOpen }));
     } catch {
       /* ignore */
     }
@@ -77,8 +83,20 @@
   <button class:on={plain} onclick={() => plainLabels.set(!plain)} title="Label nodes with plain-English descriptions">plain</button>
   <button class:on={cov} onclick={() => coverage.set(!cov)} title="Colour by test coverage (green tested / red untested)">coverage</button>
   <span class="grow"></span>
-  <button class:on={panel === 'insights'} onclick={() => (panel = panel === 'insights' ? 'detail' : 'insights')}>
+  <button
+    class:on={panel === 'insights' && asideOpen}
+    onclick={() => {
+      if (panel === 'insights' && asideOpen) panel = 'detail';
+      else {
+        panel = 'insights';
+        asideOpen = true;
+      }
+    }}
+  >
     ⚑ Insights
+  </button>
+  <button class="paneltoggle" title={asideOpen ? 'Hide panel' : 'Show panel'} onclick={() => (asideOpen = !asideOpen)}>
+    {asideOpen ? '⟩' : '⟨'}
   </button>
   {#if data.current}
     <a class="exportbtn" href="/export?project={encodeURIComponent(data.current)}" title="Download a self-contained offline HTML snapshot">⇩ export</a>
@@ -105,7 +123,7 @@
     {/if}
   </main>
 
-  <aside>
+  <aside class:collapsed={!asideOpen}>
     {#if data.graph && index}
       {#if panel === 'insights'}
         {#key data.current}<InsightsPanel graph={data.graph} />{/key}
@@ -179,6 +197,12 @@
     border-left: 1px solid var(--border);
     background: var(--bg-panel);
     overflow-y: auto;
+  }
+  aside.collapsed {
+    display: none;
+  }
+  .paneltoggle {
+    padding: 4px 8px;
   }
   .empty {
     padding: 40px;

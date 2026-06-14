@@ -158,9 +158,11 @@
     gidBySvg = new Map();
     svgByGid = new Map();
     const rev = new Map([...built.idMap.entries()].map(([gid, sid]) => [sid, gid]));
-    const svgEl = viewport.querySelector('svg')!;
-    svgEl.removeAttribute('width');
-    svgEl.removeAttribute('height');
+    const svgEl = viewport.querySelector('svg')! as SVGSVGElement;
+    // Keep mermaid's explicit px width/height (useMaxWidth:false sets them) so the
+    // SVG has an intrinsic size in the absolutely-positioned viewport; just lift
+    // the max-width cap so it isn't clamped, and scaling happens via the transform.
+    svgEl.style.maxWidth = 'none';
     svgEl.querySelectorAll('g.node').forEach((g) => {
       const m = /flowchart-(m\d+|f\d+)-/.exec(g.id) || /(m\d+|f\d+)/.exec(g.id);
       const gid = m && rev.get(m[1]);
@@ -186,6 +188,7 @@
       p.addEventListener('mouseleave', clearHighlight);
     });
     (svgEl as SVGElement & { _paths?: Element[] })._paths = paths;
+    fit(); // centre + scale to the viewport on each (re)render
   }
 
   function highlight(gid: string) {
@@ -238,8 +241,10 @@
     const stage = viewport?.parentElement;
     if (!svg || !stage) return;
     const b = svg.getBBox();
-    const k = Math.max(0.15, Math.min(3, Math.min(stage.clientWidth / b.width, (stage.clientHeight - 40) / b.height) * 0.95));
-    pz = { x: 0, y: 0, k };
+    if (!b.width || !b.height) return;
+    const k = Math.max(0.15, Math.min(3, Math.min(stage.clientWidth / b.width, (stage.clientHeight - 40) / b.height) * 0.92));
+    // centre the content (account for its bbox offset)
+    pz = { k, x: (stage.clientWidth - b.width * k) / 2 - b.x * k, y: 24 - b.y * k };
   }
 
   $effect(() => {
@@ -284,9 +289,9 @@
   }
   .viewport {
     position: absolute;
-    top: 20px;
-    left: 50%;
-    transform-origin: top center;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
     will-change: transform;
   }
   .back {
