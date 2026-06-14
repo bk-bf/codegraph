@@ -8,6 +8,7 @@
   import DetailPanel from '$lib/components/DetailPanel.svelte';
   import InsightsPanel from '$lib/components/InsightsPanel.svelte';
   import ListsPanel from '$lib/components/ListsPanel.svelte';
+  import Legend from '$lib/components/Legend.svelte';
   import type { ListType } from '$lib/graph/stores';
 
   let { data } = $props();
@@ -126,6 +127,7 @@
     {:else}
       {#key data.current + mode}<ForceView graph={data.graph} level={mode === 'modules' ? 'module' : 'function'} />{/key}
     {/if}
+    {#if data.graph}<Legend graph={data.graph} />{/if}
   </main>
 
   <aside class:collapsed={!asideOpen}>
