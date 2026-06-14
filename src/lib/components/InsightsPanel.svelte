@@ -152,7 +152,7 @@
   .copy {
     position: absolute;
     top: 11px;
-    right: 12px;
+    right: 40px;
     font-size: 10px;
     padding: 2px 6px;
   }

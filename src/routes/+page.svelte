@@ -95,9 +95,6 @@
   >
     ⚑ Insights
   </button>
-  <button class="paneltoggle" title={asideOpen ? 'Hide panel' : 'Show panel'} onclick={() => (asideOpen = !asideOpen)}>
-    {asideOpen ? '⟩' : '⟨'}
-  </button>
   {#if data.current}
     <a class="exportbtn" href="/export?project={encodeURIComponent(data.current)}" title="Download a self-contained offline HTML snapshot">⇩ export</a>
   {/if}
@@ -125,6 +122,7 @@
 
   <aside class:collapsed={!asideOpen}>
     {#if data.graph && index}
+      <button class="aside-close" title="Close panel" onclick={() => (asideOpen = false)}>×</button>
       {#if panel === 'insights'}
         {#key data.current}<InsightsPanel graph={data.graph} />{/key}
       {:else if panel === 'list'}
@@ -198,11 +196,27 @@
     background: var(--bg-panel);
     overflow-y: auto;
   }
+  aside {
+    position: relative;
+  }
   aside.collapsed {
     display: none;
   }
-  .paneltoggle {
-    padding: 4px 8px;
+  .aside-close {
+    position: absolute;
+    top: 9px;
+    right: 12px;
+    z-index: 5;
+    background: none;
+    border: 0;
+    color: var(--fg-dim);
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 4px;
+    cursor: pointer;
+  }
+  .aside-close:hover {
+    color: var(--accent2);
   }
   .empty {
     padding: 40px;

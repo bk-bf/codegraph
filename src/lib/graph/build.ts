@@ -45,8 +45,8 @@ export function buildGraph(data: RawGraph, level: 'function' | 'module' = 'funct
       }
       g.addNode(m.module, {
         label: opts.plain ? modDesc(m).split('. ')[0] : m.module.replace(/^game\//, ''),
-        x: Math.cos(a),
-        y: Math.sin(a),
+        x: Math.max(40, Math.sqrt(N) * 4) * Math.cos(a),
+        y: Math.max(40, Math.sqrt(N) * 4) * Math.sin(a),
         size: 4 + Math.sqrt((inDeg.get(m.module) ?? 0) + m.fns) * 1.2,
         color,
         group: m.group
@@ -66,8 +66,8 @@ export function buildGraph(data: RawGraph, level: 'function' | 'module' = 'funct
       if (opts.coverage) color = n.kind === 'function' || n.kind === 'method' ? (n.tested ? COV.good : COV.bad) : '#3a4453';
       g.addNode(n.id, {
         label: opts.plain ? fnDesc(n) : n.short,
-        x: Math.cos(a),
-        y: Math.sin(a),
+        x: Math.max(40, Math.sqrt(N) * 4) * Math.cos(a),
+        y: Math.max(40, Math.sqrt(N) * 4) * Math.sin(a),
         size: 2 + Math.sqrt(inDeg.get(n.id) ?? 0) * 1.4,
         color,
         group: n.group

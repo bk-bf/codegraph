@@ -59,8 +59,10 @@
 
       // ---- live physics worker: animates from the seed, reacts to drops ----
       const settings = fa2sync.default.inferSettings(g);
+      // High slowDown = small steps per tick → a gradual, visible settling
+      // animation rather than a snap. Gentle gravity so it drifts in.
       layout = new fa2.default(g, {
-        settings: { ...settings, gravity: 1.4, scalingRatio: 14, slowDown: 1 + Math.log(g.order) }
+        settings: { ...settings, gravity: 0.6, scalingRatio: 16, slowDown: g.order > 600 ? 60 : 35 }
       });
       const start = () => {
         if (layout && !layout.isRunning()) {
@@ -74,7 +76,7 @@
         running = false;
       };
       start();
-      settle = setTimeout(stop, g.order > 600 ? 7000 : 4500);
+      settle = setTimeout(stop, g.order > 600 ? 14000 : 10000);
       physicsToggle = () => (running ? stop() : start());
 
       renderer = new Sigma(g, container, {
