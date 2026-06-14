@@ -1,0 +1,9 @@
+node_modules
+/.svelte-kit
+/build
+/dist
+/data/*.json
+!/data/.gitkeep
+.snapshot.json
+*.log
+.DS_Store

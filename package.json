@@ -1,0 +1,40 @@
+{
+  "name": "codegraph",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Architecture-aware call-graph explorer: type-resolved TS/Svelte/Rust graph, ADR/layer contract checks, agent-facing query API. Onboard any project via a codegraph.config.",
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "cg": "node bin/codegraph.mjs",
+    "extract": "node bin/codegraph.mjs extract",
+    "graph:check": "node bin/codegraph.mjs check",
+    "graph:diff": "node bin/codegraph.mjs diff",
+    "graph:snapshot": "node bin/codegraph.mjs diff --save"
+  },
+  "dependencies": {
+    "graphology": "^0.25.4",
+    "graphology-communities-louvain": "^2.0.1",
+    "graphology-dag": "^0.4.1",
+    "graphology-metrics": "^2.3.1",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "mermaid": "10.9.1",
+    "sigma": "^3.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^6.0.0",
+    "@sveltejs/kit": "^2.16.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.2.6"
+  }
+}

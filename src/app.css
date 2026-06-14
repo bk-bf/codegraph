@@ -1,0 +1,22 @@
+:root {
+  --bg: #0d1117;
+  --bg-panel: #11161d;
+  --bg-elev: #1c232d;
+  --border: #2a313c;
+  --fg: #d7dce3;
+  --fg-dim: #8b94a3;
+  --accent: #f5a623;
+  --accent2: #57c7ff;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-size: 13px; }
+button, select {
+  font-family: inherit; font-size: 12px; color: var(--fg);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 9px; cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--accent2); color: var(--accent2); }
+button.on { background: var(--accent2); color: #06121d; border-color: var(--accent2); }
+a { color: var(--accent2); }
