@@ -82,6 +82,26 @@ switch (cmd) {
     if (res.errors || (process.argv.includes('--strict') && res.warnings)) process.exit(1);
     break;
   }
+  case 'watch': {
+    const p = arg ? resolveProject(reg, arg) : reg.projects[0];
+    if (!p) throw new Error(arg ? `unknown project: ${arg}` : 'no projects onboarded');
+    fs.mkdirSync(DATA, { recursive: true });
+    const cfg = loadConfig(path.resolve(REPO, p.path));
+    await runExtract(p);
+    console.error(`[codegraph] watching ${cfg.srcDirAbs} — re-extracts on .ts/.svelte change`);
+    let timer = null;
+    fs.watch(cfg.srcDirAbs, { recursive: true }, (_ev, file) => {
+      if (!file || !/\.(ts|svelte)$/.test(file) || /\.test\.ts$/.test(file)) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        runExtract(p)
+          .then(() => console.error(`[codegraph] re-extracted (${new Date().toLocaleTimeString()})`))
+          .catch((e) => console.error('[codegraph] extract failed:', e.message));
+      }, 400);
+    });
+    await new Promise(() => {}); // keep alive
+    break;
+  }
   default:
     console.error('commands: onboard <path> | list | extract [name] | check <name> | diff <name>');
     process.exit(cmd ? 1 : 0);
