@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 
 export type ViewMode = 'layered' | 'modules' | 'functions';
+export type ListType = 'functions' | 'calls' | 'files' | 'modules';
 
 export type Selection =
   | { type: 'node'; id: string }

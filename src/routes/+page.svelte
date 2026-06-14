@@ -7,6 +7,8 @@
   import ForceView from '$lib/components/ForceView.svelte';
   import DetailPanel from '$lib/components/DetailPanel.svelte';
   import InsightsPanel from '$lib/components/InsightsPanel.svelte';
+  import ListsPanel from '$lib/components/ListsPanel.svelte';
+  import type { ListType } from '$lib/graph/stores';
 
   let { data } = $props();
   const index = $derived(data.graph ? buildIndex(data.graph) : null);
@@ -17,11 +19,19 @@
   let cov = $state(false);
   plainLabels.subscribe((v) => (plain = v));
   coverage.subscribe((v) => (cov = v));
-  let panel = $state<'detail' | 'insights'>('detail');
+  let panel = $state<'detail' | 'insights' | 'list'>('detail');
+  let listType = $state<ListType>('functions');
   // Selecting anything flips the panel to detail.
   selection.subscribe((s) => {
     if (s) panel = 'detail';
   });
+  function openList(t: ListType) {
+    if (panel === 'list' && listType === t) panel = 'detail';
+    else {
+      listType = t;
+      panel = 'list';
+    }
+  }
 
   // Persist view prefs across reloads.
   const LS = 'codegraph:view';
@@ -75,7 +85,12 @@
   {/if}
   {#if data.graph}
     <span class="sep">·</span>
-    <span class="stats">{data.graph.stats.functions} fns · {data.graph.stats.edges} calls · {data.graph.stats.modules} modules</span>
+    <span class="stats">
+      <button class="statbtn" class:on={panel === 'list' && listType === 'functions'} onclick={() => openList('functions')}>{data.graph.stats.functions} fns</button> ·
+      <button class="statbtn" class:on={panel === 'list' && listType === 'calls'} onclick={() => openList('calls')}>{data.graph.stats.edges} calls</button> ·
+      <button class="statbtn" class:on={panel === 'list' && listType === 'modules'} onclick={() => openList('modules')}>{data.graph.stats.modules} modules</button> ·
+      <button class="statbtn" class:on={panel === 'list' && listType === 'files'} onclick={() => openList('files')}>{data.graph.stats.files} files</button>
+    </span>
   {/if}
 </header>
 
@@ -94,6 +109,8 @@
     {#if data.graph && index}
       {#if panel === 'insights'}
         {#key data.current}<InsightsPanel graph={data.graph} />{/key}
+      {:else if panel === 'list'}
+        {#key data.current + listType}<ListsPanel graph={data.graph} {index} type={listType} />{/key}
       {:else}
         <DetailPanel graph={data.graph} {index} />
       {/if}
@@ -118,6 +135,18 @@
   .sep,
   .stats {
     color: var(--fg-dim);
+  }
+  .statbtn {
+    background: none;
+    border: 0;
+    color: var(--fg-dim);
+    padding: 2px 3px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .statbtn:hover,
+  .statbtn.on {
+    color: var(--accent2);
   }
   .grow {
     flex: 1;
