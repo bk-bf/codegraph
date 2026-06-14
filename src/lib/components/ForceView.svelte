@@ -39,18 +39,36 @@
     return { ...data, hidden: true };
   }
 
+  const wrapCache = new Map<string, string[]>();
   function wrapText(s: string, n: number): string[] {
-    if (s.length <= n) return [s];
-    const lines: string[] = [];
-    let cur = '';
-    for (const w of s.split(' ')) {
-      if (cur && (cur + ' ' + w).length > n) {
-        lines.push(cur);
-        cur = w;
-      } else cur = cur ? cur + ' ' + w : w;
+    const key = n + '|' + s;
+    const cached = wrapCache.get(key);
+    if (cached) return cached;
+    let lines: string[];
+    if (s.length <= n) lines = [s];
+    else {
+      lines = [];
+      let cur = '';
+      for (const w of s.split(' ')) {
+        if (cur && (cur + ' ' + w).length > n) {
+          lines.push(cur);
+          cur = w;
+        } else cur = cur ? cur + ' ' + w : w;
+      }
+      if (cur) lines.push(cur);
     }
-    if (cur) lines.push(cur);
+    wrapCache.set(key, lines);
     return lines;
+  }
+
+  // Hide labels while the layout animates (drawing+reflowing them every frame is
+  // the jank); show them again once it settles.
+  function setRunning(v: boolean) {
+    running = v;
+    if (renderer) {
+      renderer.setSetting('renderLabels', !v);
+      if (!v) renderer.refresh({ skipIndexation: true });
+    }
   }
 
   // default (non-hover) node label: word-wrapped + slightly transparent to cut clutter
@@ -149,27 +167,27 @@
           renderer!.refresh({ skipIndexation: true });
         }
         if (auto && iters >= MAX) {
-          running = false;
+          setRunning(false);
           return;
         }
         raf = requestAnimationFrame(step);
       };
       const startLoop = () => {
         if (!running) {
-          running = true;
+          setRunning(true);
           raf = requestAnimationFrame(step);
         }
       };
       physicsToggle = () => {
         if (running) {
-          running = false;
+          setRunning(false);
           cancelAnimationFrame(raf);
         } else {
           auto = false; // manual run keeps going until toggled off
           startLoop();
         }
       };
-      running = true;
+      setRunning(true);
       raf = requestAnimationFrame(step);
 
       // hover highlight — split neighbours into outgoing/incoming
@@ -195,7 +213,7 @@
       const captor = renderer.getMouseCaptor();
       renderer.on('downNode', (e) => {
         dragged = e.node;
-        running = false;
+        setRunning(false);
         cancelAnimationFrame(raf);
         if (!renderer!.getCustomBBox()) renderer!.setCustomBBox(renderer!.getBBox());
       });
