@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { buildIndex } from '$lib/graph/indexes';
-  import { viewMode, focusModule, selection, plainLabels, coverage, type ViewMode } from '$lib/graph/stores';
+  import { viewMode, focusModule, forceFocus, selection, plainLabels, coverage, type ViewMode } from '$lib/graph/stores';
   import { onMount } from 'svelte';
   import MermaidView from '$lib/components/MermaidView.svelte';
   import ForceView from '$lib/components/ForceView.svelte';
@@ -21,12 +21,14 @@
   coverage.subscribe((v) => (cov = v));
   let panel = $state<'detail' | 'insights' | 'list'>('detail');
   let listType = $state<ListType>('functions');
-  let asideOpen = $state(true);
-  // Selecting anything flips the panel to detail and reveals the sidebar.
+  let asideOpen = $state(false);
+  // Selecting reveals the detail panel; deselecting closes it (no ghost skeleton).
   selection.subscribe((s) => {
     if (s) {
       panel = 'detail';
       asideOpen = true;
+    } else if (panel === 'detail') {
+      asideOpen = false;
     }
   });
   function openList(t: ListType) {
@@ -46,14 +48,13 @@
       if (s.mode) viewMode.set(s.mode);
       if (s.plain) plainLabels.set(true);
       if (s.cov) coverage.set(true);
-      if (s.asideOpen === false) asideOpen = false;
     } catch {
       /* ignore */
     }
   });
   $effect(() => {
     try {
-      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov, asideOpen }));
+      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov }));
     } catch {
       /* ignore */
     }
@@ -61,6 +62,7 @@
 
   function setMode(m: ViewMode) {
     if (m === 'layered' && mode !== 'layered') focusModule.set(null);
+    forceFocus.set(null); // the toggle shows everything at this level
     viewMode.set(m);
   }
   function switchProject(e: Event) {
@@ -77,8 +79,8 @@
   {/if}
   <span class="sep">·</span>
   <button class:on={mode === 'layered'} onclick={() => setMode('layered')}>layered</button>
-  <button class:on={mode === 'modules'} onclick={() => setMode('modules')}>modules (force)</button>
-  <button class:on={mode === 'functions'} onclick={() => setMode('functions')}>functions (force)</button>
+  <button class:on={mode === 'modules'} onclick={() => setMode('modules')}>modules</button>
+  <button class:on={mode === 'functions'} onclick={() => setMode('functions')}>functions</button>
   <span class="sep">·</span>
   <button class:on={plain} onclick={() => plainLabels.set(!plain)} title="Label nodes with plain-English descriptions">plain</button>
   <button class:on={cov} onclick={() => coverage.set(!cov)} title="Colour by test coverage (green tested / red untested)">coverage</button>

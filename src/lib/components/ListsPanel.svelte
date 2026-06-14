@@ -178,6 +178,9 @@
     padding: 3px 0;
     font: inherit;
     cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .row:hover {
     color: var(--accent2);

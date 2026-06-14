@@ -5,9 +5,10 @@ import { describer } from './describe';
 import type { RawGraph } from './types';
 
 export interface BuildOpts {
-  plain?: boolean; // label nodes with their description instead of their name
+  plain?: boolean; // append the plain-English description to the node name
   coverage?: boolean; // colour by test coverage instead of layer
   seed?: boolean; // leave circular seed positions (a live worker will lay it out)
+  moduleFilter?: string; // function level: only this module's fns + 1-hop neighbours
 }
 
 const COV = { good: '#7ee787', mid: '#f5a623', bad: '#ff6b6b' };
@@ -43,8 +44,9 @@ export function buildGraph(data: RawGraph, level: 'function' | 'module' = 'funct
         const r = c && c.n ? c.t / c.n : 0;
         color = !c ? '#3a4453' : r > 0.66 ? COV.good : r > 0.2 ? COV.mid : COV.bad;
       }
+      const mShort = m.module.replace(/^game\//, '');
       g.addNode(m.module, {
-        label: opts.plain ? modDesc(m).split('. ')[0] : m.module.replace(/^game\//, ''),
+        label: opts.plain ? `${mShort} — ${modDesc(m).split('. ')[0]}` : mShort,
         x: Math.max(40, Math.sqrt(N) * 4) * Math.cos(a),
         y: Math.max(40, Math.sqrt(N) * 4) * Math.sin(a),
         size: 4 + Math.sqrt((inDeg.get(m.module) ?? 0) + m.fns) * 1.2,
@@ -59,13 +61,24 @@ export function buildGraph(data: RawGraph, level: 'function' | 'module' = 'funct
   } else {
     const inDeg = new Map<string, number>();
     for (const e of data.edges) inDeg.set(e.to, (inDeg.get(e.to) ?? 0) + 1);
-    const N = data.nodes.length;
-    data.nodes.forEach((n, i) => {
+    // optional focus: just one module's functions + their 1-hop neighbours
+    let nodes = data.nodes;
+    if (opts.moduleFilter) {
+      const inMod = new Set(data.nodes.filter((n) => n.module === opts.moduleFilter).map((n) => n.id));
+      const vis = new Set(inMod);
+      for (const e of data.edges) {
+        if (inMod.has(e.from)) vis.add(e.to);
+        if (inMod.has(e.to)) vis.add(e.from);
+      }
+      nodes = data.nodes.filter((n) => vis.has(n.id));
+    }
+    const N = nodes.length;
+    nodes.forEach((n, i) => {
       const a = (i / N) * Math.PI * 2;
       let color = groupColor(n.group);
       if (opts.coverage) color = n.kind === 'function' || n.kind === 'method' ? (n.tested ? COV.good : COV.bad) : '#3a4453';
       g.addNode(n.id, {
-        label: opts.plain ? fnDesc(n) : n.short,
+        label: opts.plain ? `${n.short} — ${fnDesc(n)}` : n.short,
         x: Math.max(40, Math.sqrt(N) * 4) * Math.cos(a),
         y: Math.max(40, Math.sqrt(N) * 4) * Math.sin(a),
         size: 2 + Math.sqrt(inDeg.get(n.id) ?? 0) * 1.4,

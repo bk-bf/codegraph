@@ -13,6 +13,8 @@ export type Selection =
 export const viewMode = writable<ViewMode>('layered');
 /** Module the Mermaid view is drilled into (null = overview). */
 export const focusModule = writable<string | null>(null);
+/** Module the force "functions" view is focused on (null = all functions). */
+export const forceFocus = writable<string | null>(null);
 /** What the detail panel is showing. */
 export const selection = writable<Selection>(null);
 

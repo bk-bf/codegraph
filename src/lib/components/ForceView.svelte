@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { RawGraph } from '$lib/graph/types';
   import type { Sigma } from 'sigma';
-  import { selection, plainLabels, coverage } from '$lib/graph/stores';
+  import { selection, plainLabels, coverage, forceFocus } from '$lib/graph/stores';
 
   let { graph, level }: { graph: RawGraph; level: 'module' | 'function' } = $props();
 
@@ -10,9 +10,12 @@
   let running = $state(false);
   let plain = $state(false);
   let cov = $state(false);
+  let focusMod = $state<string | null>(null);
   let physicsToggle = $state<() => void>(() => {});
   plainLabels.subscribe((v) => (plain = v));
   coverage.subscribe((v) => (cov = v));
+  forceFocus.subscribe((v) => (focusMod = v));
+  const shortMod = (m: string) => m.replace(/^game\//, '');
 
   const DIM = '#222831';
   const OUT = '#57c7ff'; // outgoing: this node → others (it calls them)
@@ -114,6 +117,7 @@
     void graph;
     void plain;
     void cov;
+    void focusMod;
     if (!container) return;
     let killed = false;
     let raf = 0;
@@ -134,7 +138,12 @@
       cancelAnimationFrame(raf);
       renderer?.kill();
 
-      const g = buildGraph(graph, level, { plain, coverage: cov, seed: true });
+      const g = buildGraph(graph, level, {
+        plain,
+        coverage: cov,
+        seed: true,
+        moduleFilter: level === 'function' ? (focusMod ?? undefined) : undefined
+      });
       const settings = { ...fa2.default.inferSettings(g), gravity: 0.6, scalingRatio: 16, barnesHutOptimize: g.order > 500 };
 
       // 1. remember the seed (start) positions
@@ -258,6 +267,9 @@
 </script>
 
 <div class="canvas" bind:this={container}></div>
+{#if level === 'function' && focusMod}
+  <button class="back" onclick={() => forceFocus.set(null)}>← all functions ({shortMod(focusMod)} + callers/callees)</button>
+{/if}
 <button class="phys" class:on={running} title="Toggle physics simulation" onclick={() => physicsToggle()}>
   {running ? '❙❙' : '▶'}
 </button>
@@ -270,6 +282,13 @@
   .phys {
     position: absolute;
     bottom: 12px;
+    left: 12px;
+    font-size: 11px;
+    padding: 4px 9px;
+  }
+  .back {
+    position: absolute;
+    top: 12px;
     left: 12px;
     font-size: 11px;
     padding: 4px 9px;
