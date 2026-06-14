@@ -263,8 +263,8 @@
     const STEP = e.shiftKey ? 180 : 60;
     if (e.key === 'ArrowRight') pz = { ...pz, x: pz.x - STEP };
     else if (e.key === 'ArrowLeft') pz = { ...pz, x: pz.x + STEP };
-    else if (e.key === 'ArrowDown') pz = { ...pz, y: pz.y - STEP };
-    else if (e.key === 'ArrowUp') pz = { ...pz, y: pz.y + STEP };
+    else if (e.key === 'ArrowDown') pz = { ...pz, y: pz.y + STEP };
+    else if (e.key === 'ArrowUp') pz = { ...pz, y: pz.y - STEP };
     else return;
     e.preventDefault();
   }

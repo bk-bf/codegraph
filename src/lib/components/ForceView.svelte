@@ -284,8 +284,8 @@
     let { x, y } = s;
     if (e.key === 'ArrowRight') x += step;
     else if (e.key === 'ArrowLeft') x -= step;
-    else if (e.key === 'ArrowDown') y += step;
-    else if (e.key === 'ArrowUp') y -= step;
+    else if (e.key === 'ArrowDown') y -= step;
+    else if (e.key === 'ArrowUp') y += step;
     else return;
     cam.setState({ x, y });
     e.preventDefault();
