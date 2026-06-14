@@ -273,8 +273,26 @@
     void showAll;
     renderer?.refresh({ skipIndexation: true });
   });
+
+  // arrow-key panning of the camera (ignored while typing in an input)
+  function onKey(e: KeyboardEvent) {
+    const t = e.target as HTMLElement;
+    if (!renderer || (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable))) return;
+    const cam = renderer.getCamera();
+    const s = cam.getState();
+    const step = (e.shiftKey ? 0.3 : 0.12) * s.ratio;
+    let { x, y } = s;
+    if (e.key === 'ArrowRight') x += step;
+    else if (e.key === 'ArrowLeft') x -= step;
+    else if (e.key === 'ArrowDown') y += step;
+    else if (e.key === 'ArrowUp') y -= step;
+    else return;
+    cam.setState({ x, y });
+    e.preventDefault();
+  }
 </script>
 
+<svelte:window onkeydown={onKey} />
 <div class="canvas" bind:this={container}></div>
 {#if level === 'function' && focusMod}
   <button class="back" onclick={() => forceFocus.set(null)}>← all functions ({shortMod(focusMod)} + callers/callees)</button>

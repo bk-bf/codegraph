@@ -256,6 +256,18 @@
     e.preventDefault();
     setZoom(pz.k * (e.deltaY < 0 ? 1.1 : 0.9));
   }
+  // arrow-key panning (ignored while typing in an input)
+  function onKey(e: KeyboardEvent) {
+    const t = e.target as HTMLElement;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    const STEP = e.shiftKey ? 180 : 60;
+    if (e.key === 'ArrowRight') pz = { ...pz, x: pz.x - STEP };
+    else if (e.key === 'ArrowLeft') pz = { ...pz, x: pz.x + STEP };
+    else if (e.key === 'ArrowDown') pz = { ...pz, y: pz.y - STEP };
+    else if (e.key === 'ArrowUp') pz = { ...pz, y: pz.y + STEP };
+    else return;
+    e.preventDefault();
+  }
   const clampK = (k: number) => Math.max(0.15, Math.min(3, k));
   function setZoom(k: number) {
     pz = { ...pz, k: clampK(k) };
@@ -302,7 +314,7 @@
   });
 </script>
 
-<svelte:window onmousemove={move} onmouseup={up} />
+<svelte:window onmousemove={move} onmouseup={up} onkeydown={onKey} />
 <div
   class="stage"
   role="application"
