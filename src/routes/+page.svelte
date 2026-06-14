@@ -42,6 +42,9 @@
   <button class:on={panel === 'insights'} onclick={() => (panel = panel === 'insights' ? 'detail' : 'insights')}>
     ⚑ Insights
   </button>
+  {#if data.current}
+    <a class="exportbtn" href="/export?project={encodeURIComponent(data.current)}" title="Download a self-contained offline HTML snapshot">⇩ export</a>
+  {/if}
   {#if data.graph}
     <span class="sep">·</span>
     <span class="stats">{data.graph.stats.functions} fns · {data.graph.stats.edges} calls · {data.graph.stats.modules} modules</span>
@@ -90,6 +93,19 @@
   }
   .grow {
     flex: 1;
+  }
+  .exportbtn {
+    font-size: 12px;
+    color: var(--fg);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 9px;
+    text-decoration: none;
+  }
+  .exportbtn:hover {
+    border-color: var(--accent2);
+    color: var(--accent2);
   }
   .work {
     display: flex;
