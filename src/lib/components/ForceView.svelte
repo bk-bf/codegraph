@@ -7,8 +7,6 @@
 
   let container: HTMLDivElement | undefined = $state();
   let renderer: Sigma | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let layout: any = null;
   let running = $state(false);
   let plain = $state(false);
   let cov = $state(false);
@@ -27,7 +25,7 @@
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function nodeReducer(node: string, data: any) {
     if (!hovered) return data;
-    if (node === hovered) return { ...data, highlighted: true, zIndex: 3 };
+    if (node === hovered) return { ...data, highlighted: true, forceLabel: true, zIndex: 3 };
     if (outN.has(node)) return { ...data, color: OUT, zIndex: 2 };
     if (inN.has(node)) return { ...data, color: IN, zIndex: 2 };
     return { ...data, color: DIM, label: '' };
@@ -36,30 +34,46 @@
   function edgeReducer(edge: string, data: any) {
     if (!hovered || !renderer) return data;
     const g = renderer.getGraph();
-    if (g.source(edge) === hovered) return { ...data, color: OUT, size: (data.size || 1) + 1, zIndex: 2 };
-    if (g.target(edge) === hovered) return { ...data, color: IN, size: (data.size || 1) + 1, zIndex: 2 };
+    if (g.source(edge) === hovered) return { ...data, color: OUT, size: (data.size || 1) + 1.5, zIndex: 2 };
+    if (g.target(edge) === hovered) return { ...data, color: IN, size: (data.size || 1) + 1.5, zIndex: 2 };
     return { ...data, hidden: true };
   }
 
-  // hover "card": just a thin white border around the label, no fill
+  function wrapText(s: string, n: number): string[] {
+    if (s.length <= n) return [s];
+    const lines: string[] = [];
+    let cur = '';
+    for (const w of s.split(' ')) {
+      if (cur && (cur + ' ' + w).length > n) {
+        lines.push(cur);
+        cur = w;
+      } else cur = cur ? cur + ' ' + w : w;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
+  // hover "card": opaque dark fill + thin white border so the label reads over edges
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function drawHover(context: CanvasRenderingContext2D, data: any, settings: any) {
     if (!data.label) return;
     const size = settings.labelSize ?? 12;
     context.font = `${settings.labelWeight ?? 'normal'} ${size}px ${settings.labelFont ?? 'monospace'}`;
-    const pad = 5;
-    const tw = context.measureText(data.label).width;
-    const x = data.x + data.size + 2;
-    const h = size + pad * 2;
-    const y = data.y - h / 2;
-    context.beginPath();
-    context.rect(x, y, tw + pad * 2, h);
+    const pad = 6;
+    const lineH = size + 4;
+    const lines = wrapText(String(data.label), 34);
+    const tw = Math.max(...lines.map((l) => context.measureText(l).width));
+    const x = data.x + data.size + 3;
+    const boxH = lines.length * lineH + pad * 2 - 4;
+    const y = data.y - boxH / 2;
+    context.fillStyle = '#0e1116';
+    context.fillRect(x, y, tw + pad * 2, boxH);
     context.strokeStyle = '#ffffff';
     context.lineWidth = 1;
-    context.stroke();
+    context.strokeRect(x, y, tw + pad * 2, boxH);
     context.fillStyle = '#d7dce3';
     context.textBaseline = 'middle';
-    context.fillText(data.label, x + pad, data.y);
+    lines.forEach((l, i) => context.fillText(l, x + pad, y + pad + lineH * i + lineH / 2 - 2));
   }
 
   $effect(() => {
@@ -69,44 +83,28 @@
     void cov;
     if (!container) return;
     let killed = false;
-    let settle: ReturnType<typeof setTimeout>;
+    let raf = 0;
+    let acc = 0;
+    let iters = 0;
+    let auto = true;
+    // iterations advanced per animation frame — the real speed knob. Modules
+    // crawl; the function hairball needs more iterations so it goes a bit faster.
+    const STEP = level === 'module' ? 0.15 : 1;
+    const MAX = level === 'module' ? 320 : 600;
 
     (async () => {
-      const [{ default: Sigma }, { buildGraph }, fa2, fa2sync] = await Promise.all([
+      const [{ default: Sigma }, { buildGraph }, fa2, rendering] = await Promise.all([
         import('sigma'),
         import('$lib/graph/build'),
-        import('graphology-layout-forceatlas2/worker'),
-        import('graphology-layout-forceatlas2')
+        import('graphology-layout-forceatlas2'),
+        import('sigma/rendering')
       ]);
       if (killed || !container) return;
-      layout?.kill();
+      cancelAnimationFrame(raf);
       renderer?.kill();
 
       const g = buildGraph(graph, level, { plain, coverage: cov, seed: true });
-
-      // ---- live physics worker: animates from the seed, reacts to drops ----
-      const settings = fa2sync.default.inferSettings(g);
-      // High slowDown = small steps per tick → a gradual, visible settling
-      // animation rather than a snap. Modules animate very slowly (slowDown ×16).
-      const slowDown = level === 'module' ? 560 : g.order > 600 ? 60 : 35;
-      layout = new fa2.default(g, {
-        settings: { ...settings, gravity: 0.6, scalingRatio: 16, slowDown }
-      });
-      const start = () => {
-        if (layout && !layout.isRunning()) {
-          layout.start();
-          running = true;
-        }
-      };
-      const stop = () => {
-        clearTimeout(settle);
-        if (layout?.isRunning()) layout.stop();
-        running = false;
-      };
-      start();
-      // very slow modules need a long window to reach equilibrium
-      settle = setTimeout(stop, level === 'module' ? 90000 : g.order > 600 ? 14000 : 10000);
-      physicsToggle = () => (running ? stop() : start());
+      const settings = { ...fa2.default.inferSettings(g), gravity: 0.6, scalingRatio: 16, barnesHutOptimize: g.order > 500 };
 
       renderer = new Sigma(g, container, {
         renderLabels: true,
@@ -114,12 +112,49 @@
         labelDensity: 0.6,
         labelRenderedSizeThreshold: level === 'module' ? 6 : 14,
         defaultEdgeColor: '#222a34',
+        defaultEdgeType: 'arrow',
+        edgeProgramClasses: { arrow: rendering.EdgeArrowProgram },
         minCameraRatio: 0.05,
         maxCameraRatio: 12,
         defaultDrawNodeHover: drawHover,
         nodeReducer,
         edgeReducer
       });
+
+      // ---- manual layout stepping (controllable speed) ----
+      const step = () => {
+        if (killed || !running) return;
+        acc += STEP;
+        const n = Math.floor(acc);
+        if (n >= 1) {
+          acc -= n;
+          fa2.default.assign(g, { iterations: n, settings });
+          iters += n;
+          renderer!.refresh({ skipIndexation: true });
+        }
+        if (auto && iters >= MAX) {
+          running = false;
+          return;
+        }
+        raf = requestAnimationFrame(step);
+      };
+      const startLoop = () => {
+        if (!running) {
+          running = true;
+          raf = requestAnimationFrame(step);
+        }
+      };
+      physicsToggle = () => {
+        if (running) {
+          running = false;
+          cancelAnimationFrame(raf);
+        } else {
+          auto = false; // manual run keeps going until toggled off
+          startLoop();
+        }
+      };
+      running = true;
+      raf = requestAnimationFrame(step);
 
       // hover highlight — split neighbours into outgoing/incoming
       renderer.on('enterNode', ({ node }) => {
@@ -139,12 +174,13 @@
       );
       renderer.on('clickStage', () => selection.set(null));
 
-      // ---- dragging: pause physics while dragging, kick it on drop ----
+      // ---- dragging: pause stepping while dragging, resume on drop ----
       let dragged: string | null = null;
       const captor = renderer.getMouseCaptor();
       renderer.on('downNode', (e) => {
         dragged = e.node;
-        stop(); // freeze layout so the node follows the cursor
+        running = false;
+        cancelAnimationFrame(raf);
         if (!renderer!.getCustomBBox()) renderer!.setCustomBBox(renderer!.getBBox());
       });
       captor.on('mousemovebody', (e) => {
@@ -159,17 +195,15 @@
       captor.on('mouseup', () => {
         if (!dragged) return;
         dragged = null;
-        start(); // let neighbours settle around the moved node
-        settle = setTimeout(stop, 1500);
+        if (auto && iters >= MAX) iters = MAX - 80; // let neighbours re-settle
+        startLoop();
       });
     })();
 
     return () => {
       killed = true;
-      clearTimeout(settle);
-      layout?.kill();
+      cancelAnimationFrame(raf);
       renderer?.kill();
-      layout = null;
       renderer = null;
     };
   });

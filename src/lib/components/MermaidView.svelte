@@ -45,6 +45,21 @@
 
   // ---- mermaid source builders (ported) ----
   const esc = (s: string) => String(s).replace(/["#;{}]/g, ' ').replace(/\s+/g, ' ').trim();
+  // word-wrap to ~n chars per line, joined with mermaid <br/> breaks
+  function wrap(s: string, n = 24): string {
+    const e = esc(s);
+    if (e.length <= n) return e;
+    const lines: string[] = [];
+    let cur = '';
+    for (const w of e.split(' ')) {
+      if (cur && (cur + ' ' + w).length > n) {
+        lines.push(cur);
+        cur = w;
+      } else cur = cur ? cur + ' ' + w : w;
+    }
+    if (cur) lines.push(cur);
+    return lines.join('<br/>');
+  }
   function shade(hex: string) {
     const c = hex.replace('#', '');
     const p = (i: number) => Math.round(parseInt(c.slice(i, i + 2), 16) * 0.28).toString(16).padStart(2, '0');
@@ -63,7 +78,7 @@
       src += `subgraph G_${grp}["${grp.toUpperCase()}"]\n`;
       for (const m of mods) {
         const sid = idMap.get(m.module)!;
-        const lbl = plain ? `${esc(m.module.split('/').pop()!)}<br/>${SEP}<br/>${esc(modDesc(m).split('. ')[0])}` : `${esc(m.module.split('/').pop()!)}<br/>${m.fns} fn`;
+        const lbl = plain ? `${esc(m.module.split('/').pop()!)}<br/>${SEP}<br/>${wrap(modDesc(m).split('. ')[0], 24)}` : `${esc(m.module.split('/').pop()!)}<br/>${m.fns} fn`;
         src += `  ${sid}["${lbl}"]\n`;
         const stroke = (cov && covModuleColor(m.module)) || groupColor(grp);
         styles.push(`style ${sid} fill:${shade(groupColor(grp))},stroke:${stroke},color:#e6edf3${cov ? ',stroke-width:2.5px' : ''}`);
@@ -98,7 +113,7 @@
     src += `subgraph FOCUS["${esc(sm(modName))}"]\n`;
     for (const n of fns) {
       const sid = idMap.get(n.id)!;
-      const lbl = plain ? `${esc(n.short)}<br/>${SEP}<br/>${esc(fnDesc(n))}` : esc(n.short);
+      const lbl = plain ? `${esc(n.short)}<br/>${SEP}<br/>${wrap(fnDesc(n), 24)}` : esc(n.short);
       src += `  ${sid}["${lbl}"]\n`;
       const c = groupColor(n.group);
       const stroke = cov ? (n.tested ? COV.good : COV.bad) : c;

@@ -225,7 +225,7 @@
   }
   .frow {
     display: block;
-    width: 100%;
+    width: calc(100% - 8px);
     text-align: left;
     background: none;
     border: 0;
@@ -235,6 +235,9 @@
     margin-left: 8px;
     font: inherit;
     cursor: pointer;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .frow:hover {
     border-left-color: var(--accent2);
