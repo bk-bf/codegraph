@@ -27,7 +27,8 @@ export const GET: RequestHandler = ({ url }) => {
 function page(graphJson: string, colorsJson: string, mermaidSrc: string, name: string, stats: { functions: number; edges: number; modules: number }) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>codegraph — ${name}</title>
 <style>
-  :root{--bg:#0d1117;--fg:#d7dce3;--dim:#8b94a3;--border:#2a313c;--accent:#f5a623}
+  :root{--bg:#0e1116;--fg:#d7dce3;--dim:#8b94a3;--border:#2a313c;--accent:#f5a623}
+  #stage{background:radial-gradient(circle at 1px 1px,#1a2029 1px,transparent 0) 0 0/26px 26px var(--bg)}
   *{box-sizing:border-box}html,body{height:100%;margin:0}
   body{background:var(--bg);color:var(--fg);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;overflow:hidden}
   header{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)}

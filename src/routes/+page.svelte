@@ -188,6 +188,8 @@
     position: relative;
     flex: 1;
     overflow: hidden;
+    /* signature dotted-grid backdrop from the original viewer */
+    background: radial-gradient(circle at 1px 1px, #1a2029 1px, transparent 0) 0 0 / 26px 26px var(--bg);
   }
   aside {
     width: 340px;
