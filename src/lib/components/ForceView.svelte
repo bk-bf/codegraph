@@ -87,8 +87,8 @@
       // ---- live physics worker: animates from the seed, reacts to drops ----
       const settings = fa2sync.default.inferSettings(g);
       // High slowDown = small steps per tick → a gradual, visible settling
-      // animation rather than a snap. Modules animate at ~1/4 speed (slowDown ×4).
-      const slowDown = level === 'module' ? 140 : g.order > 600 ? 60 : 35;
+      // animation rather than a snap. Modules animate very slowly (slowDown ×16).
+      const slowDown = level === 'module' ? 560 : g.order > 600 ? 60 : 35;
       layout = new fa2.default(g, {
         settings: { ...settings, gravity: 0.6, scalingRatio: 16, slowDown }
       });
@@ -104,8 +104,8 @@
         running = false;
       };
       start();
-      // 4× slower modules need a longer window to reach equilibrium
-      settle = setTimeout(stop, level === 'module' ? 36000 : g.order > 600 ? 14000 : 10000);
+      // very slow modules need a long window to reach equilibrium
+      settle = setTimeout(stop, level === 'module' ? 90000 : g.order > 600 ? 14000 : 10000);
       physicsToggle = () => (running ? stop() : start());
 
       renderer = new Sigma(g, container, {
