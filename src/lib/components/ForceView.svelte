@@ -117,13 +117,11 @@
     if (!container) return;
     let killed = false;
     let raf = 0;
-    let acc = 0;
-    let iters = 0;
-    let auto = true;
-    // iterations advanced per animation frame — the real speed knob. Modules
-    // crawl; the function hairball needs more iterations so it goes a bit faster.
-    const STEP = level === 'module' ? 0.15 : 1;
-    const MAX = level === 'module' ? 320 : 600;
+    // EASE per frame: each node moves this fraction of the remaining distance to
+    // its settled target. Exponential → monotonic → no overshoot/oscillation.
+    // Smaller = slower. Modules crawl; the function hairball eases a bit faster.
+    const EASE = level === 'module' ? 0.012 : 0.022;
+    const MAX_FRAMES = level === 'module' ? 1800 : 900;
 
     (async () => {
       const [{ default: Sigma }, { buildGraph }, fa2, rendering] = await Promise.all([
@@ -138,6 +136,21 @@
 
       const g = buildGraph(graph, level, { plain, coverage: cov, seed: true });
       const settings = { ...fa2.default.inferSettings(g), gravity: 0.6, scalingRatio: 16, barnesHutOptimize: g.order > 500 };
+
+      // 1. remember the seed (start) positions
+      const seed = new Map<string, { x: number; y: number }>();
+      g.forEachNode((n, a) => seed.set(n, { x: a.x, y: a.y }));
+      // 2. compute the fully-settled target layout in one shot (FA2's adaptive
+      //    damping runs to completion here → no oscillation), then capture it
+      fa2.default.assign(g, { iterations: 500, settings });
+      const target = new Map<string, { x: number; y: number }>();
+      g.forEachNode((n, a) => target.set(n, { x: a.x, y: a.y }));
+      // 3. snap back to the seed so we can animate the settle smoothly
+      g.forEachNode((n) => {
+        const s = seed.get(n)!;
+        g.setNodeAttribute(n, 'x', s.x);
+        g.setNodeAttribute(n, 'y', s.y);
+      });
 
       renderer = new Sigma(g, container, {
         renderLabels: true,
@@ -155,36 +168,41 @@
         edgeReducer
       });
 
-      // ---- manual layout stepping (controllable speed) ----
+      // ---- smooth ease toward the precomputed target ----
+      let frames = 0;
       const step = () => {
         if (killed || !running) return;
-        acc += STEP;
-        const n = Math.floor(acc);
-        if (n >= 1) {
-          acc -= n;
-          fa2.default.assign(g, { iterations: n, settings });
-          iters += n;
-          renderer!.refresh({ skipIndexation: true });
-        }
-        if (auto && iters >= MAX) {
+        let moved = 0;
+        g.forEachNode((n, a) => {
+          const t = target.get(n)!;
+          const dx = (t.x - a.x) * EASE;
+          const dy = (t.y - a.y) * EASE;
+          moved += Math.abs(dx) + Math.abs(dy);
+          g.setNodeAttribute(n, 'x', a.x + dx);
+          g.setNodeAttribute(n, 'y', a.y + dy);
+        });
+        renderer!.refresh({ skipIndexation: true });
+        frames++;
+        if (moved / g.order < 0.08 || frames > MAX_FRAMES) {
           setRunning(false);
           return;
         }
         raf = requestAnimationFrame(step);
-      };
-      const startLoop = () => {
-        if (!running) {
-          setRunning(true);
-          raf = requestAnimationFrame(step);
-        }
       };
       physicsToggle = () => {
         if (running) {
           setRunning(false);
           cancelAnimationFrame(raf);
         } else {
-          auto = false; // manual run keeps going until toggled off
-          startLoop();
+          // replay: scatter back to the seed and ease in again
+          g.forEachNode((n) => {
+            const s = seed.get(n)!;
+            g.setNodeAttribute(n, 'x', s.x);
+            g.setNodeAttribute(n, 'y', s.y);
+          });
+          frames = 0;
+          setRunning(true);
+          raf = requestAnimationFrame(step);
         }
       };
       setRunning(true);
@@ -208,13 +226,11 @@
       );
       renderer.on('clickStage', () => selection.set(null));
 
-      // ---- dragging: pause stepping while dragging, resume on drop ----
+      // ---- dragging: free-move a node; it keeps where you drop it ----
       let dragged: string | null = null;
       const captor = renderer.getMouseCaptor();
       renderer.on('downNode', (e) => {
         dragged = e.node;
-        setRunning(false);
-        cancelAnimationFrame(raf);
         if (!renderer!.getCustomBBox()) renderer!.setCustomBBox(renderer!.getBBox());
       });
       captor.on('mousemovebody', (e) => {
@@ -222,15 +238,13 @@
         const pos = renderer!.viewportToGraph(e);
         g.setNodeAttribute(dragged, 'x', pos.x);
         g.setNodeAttribute(dragged, 'y', pos.y);
+        target.set(dragged, { x: pos.x, y: pos.y }); // pin its target so the ease keeps it there
         e.preventSigmaDefault();
         e.original.preventDefault();
         e.original.stopPropagation();
       });
       captor.on('mouseup', () => {
-        if (!dragged) return;
         dragged = null;
-        if (auto && iters >= MAX) iters = MAX - 80; // let neighbours re-settle
-        startLoop();
       });
     })();
 
