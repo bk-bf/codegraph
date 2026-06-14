@@ -14,3 +14,8 @@ export const viewMode = writable<ViewMode>('layered');
 export const focusModule = writable<string | null>(null);
 /** What the detail panel is showing. */
 export const selection = writable<Selection>(null);
+
+/** Label nodes with their plain-English description instead of their name. */
+export const plainLabels = writable(false);
+/** Colour nodes by test coverage (green tested / red untested) instead of layer. */
+export const coverage = writable(false);

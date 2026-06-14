@@ -8,7 +8,7 @@ export function listProjects(): string[] {
   if (!fs.existsSync(DATA)) return [];
   return fs
     .readdirSync(DATA)
-    .filter((f) => f.endsWith('.json'))
+    .filter((f) => f.endsWith('.json') && !f.endsWith('.snapshot.json'))
     .map((f) => f.replace(/\.json$/, ''))
     .sort();
 }

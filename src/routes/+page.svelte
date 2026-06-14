@@ -1,7 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { buildIndex } from '$lib/graph/indexes';
-  import { viewMode, focusModule, selection, type ViewMode } from '$lib/graph/stores';
+  import { viewMode, focusModule, selection, plainLabels, coverage, type ViewMode } from '$lib/graph/stores';
+  import { onMount } from 'svelte';
   import MermaidView from '$lib/components/MermaidView.svelte';
   import ForceView from '$lib/components/ForceView.svelte';
   import DetailPanel from '$lib/components/DetailPanel.svelte';
@@ -12,10 +13,34 @@
 
   let mode = $state<ViewMode>('layered');
   viewMode.subscribe((m) => (mode = m));
+  let plain = $state(false);
+  let cov = $state(false);
+  plainLabels.subscribe((v) => (plain = v));
+  coverage.subscribe((v) => (cov = v));
   let panel = $state<'detail' | 'insights'>('detail');
   // Selecting anything flips the panel to detail.
   selection.subscribe((s) => {
     if (s) panel = 'detail';
+  });
+
+  // Persist view prefs across reloads.
+  const LS = 'codegraph:view';
+  onMount(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(LS) || '{}');
+      if (s.mode) viewMode.set(s.mode);
+      if (s.plain) plainLabels.set(true);
+      if (s.cov) coverage.set(true);
+    } catch {
+      /* ignore */
+    }
+  });
+  $effect(() => {
+    try {
+      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov }));
+    } catch {
+      /* ignore */
+    }
   });
 
   function setMode(m: ViewMode) {
@@ -38,6 +63,9 @@
   <button class:on={mode === 'layered'} onclick={() => setMode('layered')}>layered</button>
   <button class:on={mode === 'modules'} onclick={() => setMode('modules')}>modules (force)</button>
   <button class:on={mode === 'functions'} onclick={() => setMode('functions')}>functions (force)</button>
+  <span class="sep">·</span>
+  <button class:on={plain} onclick={() => plainLabels.set(!plain)} title="Label nodes with plain-English descriptions">plain</button>
+  <button class:on={cov} onclick={() => coverage.set(!cov)} title="Colour by test coverage (green tested / red untested)">coverage</button>
   <span class="grow"></span>
   <button class:on={panel === 'insights'} onclick={() => (panel = panel === 'insights' ? 'detail' : 'insights')}>
     ⚑ Insights

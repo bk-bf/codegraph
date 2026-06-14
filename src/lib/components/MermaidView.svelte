@@ -2,15 +2,31 @@
   import type { RawGraph } from '$lib/graph/types';
   import type { GraphIndex } from '$lib/graph/indexes';
   import { groupColor } from '$lib/graph/colors';
-  import { selection, focusModule } from '$lib/graph/stores';
+  import { describer } from '$lib/graph/describe';
+  import { selection, focusModule, plainLabels, coverage } from '$lib/graph/stores';
 
   let { graph, index }: { graph: RawGraph; index: GraphIndex } = $props();
   const prefix = graph.config?.namespacePrefix ?? null;
   const sm = (m: string) => (prefix && m.startsWith(prefix + '/') ? m.slice(prefix.length + 1) : m);
+  const { fnDesc, modDesc } = describer(graph);
+  const COV = { good: '#7ee787', mid: '#f5a623', bad: '#ff6b6b' };
+  const SEP = '────────';
 
   let viewport: HTMLDivElement | undefined = $state();
   let focus = $state<string | null>(null);
+  let plain = $state(false);
+  let cov = $state(false);
   focusModule.subscribe((f) => (focus = f));
+  plainLabels.subscribe((v) => (plain = v));
+  coverage.subscribe((v) => (cov = v));
+
+  // coverage stroke for a module (by tested fraction) or function (tested?)
+  const covModuleColor = (mod: string) => {
+    const fns = graph.nodes.filter((n) => n.module === mod && (n.kind === 'function' || n.kind === 'method'));
+    if (!fns.length) return null;
+    const r = fns.filter((n) => n.tested).length / fns.length;
+    return r > 0.66 ? COV.good : r > 0.2 ? COV.mid : COV.bad;
+  };
 
   let pz = $state({ x: 0, y: 0, k: 0.85 });
   let seq = 0;
@@ -39,8 +55,10 @@
       src += `subgraph G_${grp}["${grp.toUpperCase()}"]\n`;
       for (const m of mods) {
         const sid = idMap.get(m.module)!;
-        src += `  ${sid}["${esc(m.module.split('/').pop()!)}<br/>${m.fns} fn"]\n`;
-        styles.push(`style ${sid} fill:${shade(groupColor(grp))},stroke:${groupColor(grp)},color:#e6edf3`);
+        const lbl = plain ? `${esc(m.module.split('/').pop()!)}<br/>${SEP}<br/>${esc(modDesc(m).split('. ')[0])}` : `${esc(m.module.split('/').pop()!)}<br/>${m.fns} fn`;
+        src += `  ${sid}["${lbl}"]\n`;
+        const stroke = (cov && covModuleColor(m.module)) || groupColor(grp);
+        styles.push(`style ${sid} fill:${shade(groupColor(grp))},stroke:${stroke},color:#e6edf3${cov ? ',stroke-width:2.5px' : ''}`);
       }
       src += 'end\n';
     }
@@ -72,9 +90,11 @@
     src += `subgraph FOCUS["${esc(sm(modName))}"]\n`;
     for (const n of fns) {
       const sid = idMap.get(n.id)!;
-      src += `  ${sid}["${esc(n.short)}"]\n`;
+      const lbl = plain ? `${esc(n.short)}<br/>${SEP}<br/>${esc(fnDesc(n))}` : esc(n.short);
+      src += `  ${sid}["${lbl}"]\n`;
       const c = groupColor(n.group);
-      styles.push(`style ${sid} fill:${shade(c)},stroke:${c},color:#e6edf3`);
+      const stroke = cov ? (n.tested ? COV.good : COV.bad) : c;
+      styles.push(`style ${sid} fill:${shade(c)},stroke:${stroke},color:#e6edf3${cov ? ',stroke-width:2.5px' : ''}`);
     }
     src += 'end\n';
     const byMod: Record<string, string[]> = {};
@@ -214,6 +234,8 @@
 
   $effect(() => {
     void focus;
+    void plain;
+    void cov;
     render();
   });
 </script>

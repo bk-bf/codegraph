@@ -102,6 +102,30 @@ switch (cmd) {
     await new Promise(() => {}); // keep alive
     break;
   }
+  case 'diff':
+  case 'snapshot': {
+    const save = cmd === 'snapshot' || process.argv.includes('--save');
+    const named = arg && arg !== '--save' ? arg : null;
+    const p = named ? resolveProject(reg, named) : reg.projects[0];
+    if (!p) throw new Error(named ? `unknown project: ${named}` : 'no projects onboarded');
+    fs.mkdirSync(DATA, { recursive: true });
+    await runExtract(p);
+    const cfg = loadConfig(path.resolve(REPO, p.path));
+    const curPath = path.join(DATA, `${cfg.name}.json`);
+    const snapPath = path.join(DATA, `${cfg.name}.snapshot.json`);
+    if (save) {
+      fs.copyFileSync(curPath, snapPath);
+      console.error(`✓ saved baseline → data/${cfg.name}.snapshot.json`);
+      break;
+    }
+    if (!fs.existsSync(snapPath)) {
+      console.error(`No snapshot for ${cfg.name}. Create one first:  codegraph snapshot ${cfg.name}`);
+      process.exit(2);
+    }
+    const { diffGraphs } = await import('../src/lib/core/diff.mjs');
+    diffGraphs(JSON.parse(fs.readFileSync(snapPath, 'utf8')), JSON.parse(fs.readFileSync(curPath, 'utf8')), `${cfg.name}.snapshot`);
+    break;
+  }
   default:
     console.error('commands: onboard <path> | list | extract [name] | check <name> | diff <name>');
     process.exit(cmd ? 1 : 0);
