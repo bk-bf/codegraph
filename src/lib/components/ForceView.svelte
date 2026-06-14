@@ -145,7 +145,7 @@
 
 <div class="canvas" bind:this={container}></div>
 <button class="phys" class:on={running} title="Toggle physics simulation" onclick={() => physicsToggle()}>
-  {running ? '❙❙ physics' : '▶ physics'}
+  {running ? '❙❙' : '▶'}
 </button>
 
 <style>

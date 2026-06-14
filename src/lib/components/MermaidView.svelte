@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { RawGraph } from '$lib/graph/types';
   import type { GraphIndex } from '$lib/graph/indexes';
+  import { onMount } from 'svelte';
   import { groupColor } from '$lib/graph/colors';
   import { describer } from '$lib/graph/describe';
   import { selection, focusModule, plainLabels, coverage } from '$lib/graph/stores';
@@ -19,6 +20,13 @@
   focusModule.subscribe((f) => (focus = f));
   plainLabels.subscribe((v) => (plain = v));
   coverage.subscribe((v) => (cov = v));
+
+  // user-pinned default zoom % for new views (0 = fit-to-screen)
+  let defaultPct = $state(0);
+  onMount(() => {
+    const v = parseInt(localStorage.getItem('codegraph:mermaidZoom') || '0', 10);
+    if (!isNaN(v)) defaultPct = v;
+  });
 
   // coverage stroke for a module (by tested fraction) or function (tested?)
   const covModuleColor = (mod: string) => {
@@ -188,7 +196,7 @@
       p.addEventListener('mouseleave', clearHighlight);
     });
     (svgEl as SVGElement & { _paths?: Element[] })._paths = paths;
-    fit(); // centre + scale to the viewport on each (re)render
+    applyInitialZoom(); // pinned default zoom, else centre + fit
   }
 
   function highlight(gid: string) {
@@ -233,8 +241,17 @@
     e.preventDefault();
     setZoom(pz.k * (e.deltaY < 0 ? 1.1 : 0.9));
   }
+  const clampK = (k: number) => Math.max(0.15, Math.min(3, k));
   function setZoom(k: number) {
-    pz = { ...pz, k: Math.max(0.15, Math.min(3, k)) };
+    pz = { ...pz, k: clampK(k) };
+  }
+  function centerAt(k: number) {
+    const svg = viewport?.querySelector('svg') as SVGGraphicsElement | null;
+    const stage = viewport?.parentElement;
+    if (!svg || !stage) return;
+    const b = svg.getBBox();
+    if (!b.width || !b.height) return;
+    pz = { k, x: (stage.clientWidth - b.width * k) / 2 - b.x * k, y: 24 - b.y * k };
   }
   function fit() {
     const svg = viewport?.querySelector('svg') as SVGGraphicsElement | null;
@@ -242,9 +259,24 @@
     if (!svg || !stage) return;
     const b = svg.getBBox();
     if (!b.width || !b.height) return;
-    const k = Math.max(0.15, Math.min(3, Math.min(stage.clientWidth / b.width, (stage.clientHeight - 40) / b.height) * 0.92));
-    // centre the content (account for its bbox offset)
-    pz = { k, x: (stage.clientWidth - b.width * k) / 2 - b.x * k, y: 24 - b.y * k };
+    centerAt(clampK(Math.min(stage.clientWidth / b.width, (stage.clientHeight - 40) / b.height) * 0.92));
+  }
+  // on (re)render: honour a pinned default zoom, else fit-to-screen
+  function applyInitialZoom() {
+    if (defaultPct > 0) centerAt(clampK(defaultPct / 100));
+    else fit();
+  }
+  function setZoomPct(v: string) {
+    const n = parseInt(v, 10);
+    if (!isNaN(n)) setZoom(n / 100);
+  }
+  function pinDefault() {
+    defaultPct = Math.round(pz.k * 100);
+    try {
+      localStorage.setItem('codegraph:mermaidZoom', String(defaultPct));
+    } catch {
+      /* ignore */
+    }
   }
 
   $effect(() => {
@@ -271,9 +303,19 @@
   {/if}
   <div class="zoom">
     <button onclick={() => setZoom(pz.k * 0.83)} title="Zoom out">−</button>
-    <span class="pct">{Math.round(pz.k * 100)}%</span>
+    <span class="readout">
+      <input
+        class="pct"
+        inputmode="numeric"
+        autocomplete="off"
+        value={Math.round(pz.k * 100)}
+        onkeydown={(e) => e.key === 'Enter' && setZoomPct((e.currentTarget as HTMLInputElement).value)}
+        onblur={(e) => setZoomPct((e.currentTarget as HTMLInputElement).value)}
+      /><span class="sign">%</span>
+    </span>
     <button onclick={() => setZoom(pz.k * 1.2)} title="Zoom in">+</button>
     <button onclick={fit} title="Fit to screen">⤢</button>
+    <button class:on={defaultPct > 0} onclick={pinDefault} title="Pin current zoom as the default for new views">★</button>
   </div>
 </div>
 
@@ -324,11 +366,33 @@
   .zoom button:hover {
     color: var(--accent2);
   }
-  .pct {
+  .zoom button.on {
+    background: none;
+    color: var(--accent);
+    font-weight: 400;
+  }
+  .readout {
+    display: inline-flex;
+    align-items: center;
     color: var(--fg-dim);
     font-size: 11px;
-    min-width: 34px;
-    text-align: center;
+  }
+  .pct {
+    width: 30px;
+    background: none;
+    border: 0;
+    color: var(--fg);
+    font: inherit;
+    text-align: right;
+    padding: 0;
+    -moz-appearance: textfield;
+  }
+  .pct:focus {
+    outline: none;
+    color: var(--accent2);
+  }
+  .sign {
+    color: var(--fg-dim);
   }
   .viewport :global(g.node) {
     cursor: pointer;
