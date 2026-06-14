@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { buildIndex } from '$lib/graph/indexes';
-  import { viewMode, focusModule, forceFocus, selection, plainLabels, coverage, type ViewMode } from '$lib/graph/stores';
+  import { viewMode, focusModule, forceFocus, selection, plainLabels, coverage, allLabels, type ViewMode } from '$lib/graph/stores';
   import { onMount } from 'svelte';
   import MermaidView from '$lib/components/MermaidView.svelte';
   import ForceView from '$lib/components/ForceView.svelte';
@@ -17,8 +17,10 @@
   viewMode.subscribe((m) => (mode = m));
   let plain = $state(false);
   let cov = $state(false);
+  let names = $state(false);
   plainLabels.subscribe((v) => (plain = v));
   coverage.subscribe((v) => (cov = v));
+  allLabels.subscribe((v) => (names = v));
   let panel = $state<'detail' | 'insights' | 'list'>('detail');
   let listType = $state<ListType>('functions');
   let asideOpen = $state(false);
@@ -48,13 +50,14 @@
       if (s.mode) viewMode.set(s.mode);
       if (s.plain) plainLabels.set(true);
       if (s.cov) coverage.set(true);
+      if (s.names) allLabels.set(true);
     } catch {
       /* ignore */
     }
   });
   $effect(() => {
     try {
-      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov }));
+      localStorage.setItem(LS, JSON.stringify({ mode, plain, cov, names }));
     } catch {
       /* ignore */
     }
@@ -84,6 +87,9 @@
   <span class="sep">·</span>
   <button class:on={plain} onclick={() => plainLabels.set(!plain)} title="Label nodes with plain-English descriptions">plain</button>
   <button class:on={cov} onclick={() => coverage.set(!cov)} title="Colour by test coverage (green tested / red untested)">coverage</button>
+  {#if mode !== 'layered'}
+    <button class:on={names} onclick={() => allLabels.set(!names)} title="Show every node's name regardless of zoom / node size">names</button>
+  {/if}
   <span class="grow"></span>
   <button
     class:on={panel === 'insights' && asideOpen}

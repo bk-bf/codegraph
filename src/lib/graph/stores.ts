@@ -22,3 +22,5 @@ export const selection = writable<Selection>(null);
 export const plainLabels = writable(false);
 /** Colour nodes by test coverage (green tested / red untested) instead of layer. */
 export const coverage = writable(false);
+/** Force every node's label to show in the force view, ignoring zoom/size culling. */
+export const allLabels = writable(false);

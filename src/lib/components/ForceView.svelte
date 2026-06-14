@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { RawGraph } from '$lib/graph/types';
   import type { Sigma } from 'sigma';
-  import { selection, plainLabels, coverage, forceFocus } from '$lib/graph/stores';
+  import { selection, plainLabels, coverage, forceFocus, allLabels } from '$lib/graph/stores';
 
   let { graph, level }: { graph: RawGraph; level: 'module' | 'function' } = $props();
 
@@ -15,6 +15,8 @@
   plainLabels.subscribe((v) => (plain = v));
   coverage.subscribe((v) => (cov = v));
   forceFocus.subscribe((v) => (focusMod = v));
+  let showAll = $state(false);
+  allLabels.subscribe((v) => (showAll = v));
   const shortMod = (m: string) => m.replace(/^game\//, '');
 
   const DIM = '#222831';
@@ -27,10 +29,11 @@
   let inN = new Set<string>(); // nodes that call the hovered node
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function nodeReducer(node: string, data: any) {
-    if (!hovered) return data;
-    if (node === hovered) return { ...data, highlighted: true, forceLabel: true, zIndex: 3 };
-    if (outN.has(node)) return { ...data, color: OUT, zIndex: 2 };
-    if (inN.has(node)) return { ...data, color: IN, zIndex: 2 };
+    const base = showAll ? { ...data, forceLabel: true } : data;
+    if (!hovered) return base;
+    if (node === hovered) return { ...base, highlighted: true, forceLabel: true, zIndex: 3 };
+    if (outN.has(node)) return { ...base, color: OUT, zIndex: 2 };
+    if (inN.has(node)) return { ...base, color: IN, zIndex: 2 };
     return { ...data, color: DIM, label: '' };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -263,6 +266,12 @@
       renderer?.kill();
       renderer = null;
     };
+  });
+
+  // toggling "all names" just re-runs the reducers — no relayout
+  $effect(() => {
+    void showAll;
+    renderer?.refresh({ skipIndexation: true });
   });
 </script>
 
