@@ -19,14 +19,17 @@
   "dependencies": {
     "graphology": "^0.25.4",
     "graphology-communities-louvain": "^2.0.1",
+    "graphology-components": "^1.5.4",
     "graphology-dag": "^0.4.1",
-    "graphology-metrics": "^2.3.1",
     "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-metrics": "^2.3.1",
     "mermaid": "10.9.1",
     "sigma": "^3.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^6.0.0",

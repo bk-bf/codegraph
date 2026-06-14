@@ -735,6 +735,13 @@ const out = {
   generatedAt: new Date().toISOString(),
   project: CFG.name,
   root: ROOT,
+  // Analysis knobs embedded so analysis.mjs is self-describing (no separate config plumbing).
+  config: {
+    layers: CFG.layers,
+    godFunctions: CFG.godFunctions,
+    adrRules: CFG.adrRules,
+    namespacePrefix: (CFG.group && CFG.group.namespacePrefix) || null
+  },
   adrs,
   stats: {
     files: fileList.length,

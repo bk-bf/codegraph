@@ -63,6 +63,25 @@ switch (cmd) {
     for (const p of targets) await runExtract(p);
     break;
   }
+  case 'check': {
+    const p = arg ? resolveProject(reg, arg) : reg.projects[0];
+    if (!p) throw new Error(arg ? `unknown project: ${arg}` : 'no projects onboarded');
+    fs.mkdirSync(DATA, { recursive: true });
+    await runExtract(p);
+    const cfg = loadConfig(path.resolve(REPO, p.path));
+    const graph = JSON.parse(fs.readFileSync(path.join(DATA, `${cfg.name}.json`), 'utf8'));
+    const { runChecks } = await import('../src/lib/core/analysis.mjs');
+    const res = runChecks(graph);
+    for (const rule of res.rules) {
+      const hits = res.findings.filter((f) => f.rule === rule);
+      const mark = hits.some((f) => f.level === 'error') ? '✗' : hits.length ? '!' : '✓';
+      console.error(`\n${mark} ${rule}${hits.length ? ` (${hits.length})` : ''}`);
+      for (const f of hits) console.error(`    ${f.msg}${f.file ? `  [${f.file}:${f.line}]` : ''}`);
+    }
+    console.error(`\n${res.errors} error(s), ${res.warnings} warning(s)`);
+    if (res.errors || (process.argv.includes('--strict') && res.warnings)) process.exit(1);
+    break;
+  }
   default:
     console.error('commands: onboard <path> | list | extract [name] | check <name> | diff <name>');
     process.exit(cmd ? 1 : 0);
