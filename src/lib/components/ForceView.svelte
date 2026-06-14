@@ -17,22 +17,49 @@
   coverage.subscribe((v) => (cov = v));
 
   const DIM = '#222831';
+  const OUT = '#57c7ff'; // outgoing: this node → others (it calls them)
+  const IN = '#f5a623'; // incoming: others → this node (they call it)
 
   // hover state — read by the reducers passed to Sigma
   let hovered: string | null = null;
-  let neighbors = new Set<string>();
+  let outN = new Set<string>(); // nodes the hovered node calls
+  let inN = new Set<string>(); // nodes that call the hovered node
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function nodeReducer(node: string, data: any) {
-    if (hovered && node !== hovered && !neighbors.has(node)) return { ...data, color: DIM, label: '' };
-    if (node === hovered) return { ...data, highlighted: true, zIndex: 2 };
-    return data;
+    if (!hovered) return data;
+    if (node === hovered) return { ...data, highlighted: true, zIndex: 3 };
+    if (outN.has(node)) return { ...data, color: OUT, zIndex: 2 };
+    if (inN.has(node)) return { ...data, color: IN, zIndex: 2 };
+    return { ...data, color: DIM, label: '' };
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function edgeReducer(edge: string, data: any) {
     if (!hovered || !renderer) return data;
-    return renderer.getGraph().hasExtremity(edge, hovered)
-      ? { ...data, color: '#57c7ff', zIndex: 1 }
-      : { ...data, hidden: true };
+    const g = renderer.getGraph();
+    if (g.source(edge) === hovered) return { ...data, color: OUT, size: (data.size || 1) + 1, zIndex: 2 };
+    if (g.target(edge) === hovered) return { ...data, color: IN, size: (data.size || 1) + 1, zIndex: 2 };
+    return { ...data, hidden: true };
+  }
+
+  // hover "card": just a thin white border around the label, no fill
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function drawHover(context: CanvasRenderingContext2D, data: any, settings: any) {
+    if (!data.label) return;
+    const size = settings.labelSize ?? 12;
+    context.font = `${settings.labelWeight ?? 'normal'} ${size}px ${settings.labelFont ?? 'monospace'}`;
+    const pad = 5;
+    const tw = context.measureText(data.label).width;
+    const x = data.x + data.size + 2;
+    const h = size + pad * 2;
+    const y = data.y - h / 2;
+    context.beginPath();
+    context.rect(x, y, tw + pad * 2, h);
+    context.strokeStyle = '#ffffff';
+    context.lineWidth = 1;
+    context.stroke();
+    context.fillStyle = '#d7dce3';
+    context.textBaseline = 'middle';
+    context.fillText(data.label, x + pad, data.y);
   }
 
   $effect(() => {
@@ -60,9 +87,10 @@
       // ---- live physics worker: animates from the seed, reacts to drops ----
       const settings = fa2sync.default.inferSettings(g);
       // High slowDown = small steps per tick → a gradual, visible settling
-      // animation rather than a snap. Gentle gravity so it drifts in.
+      // animation rather than a snap. Modules animate at ~1/4 speed (slowDown ×4).
+      const slowDown = level === 'module' ? 140 : g.order > 600 ? 60 : 35;
       layout = new fa2.default(g, {
-        settings: { ...settings, gravity: 0.6, scalingRatio: 16, slowDown: g.order > 600 ? 60 : 35 }
+        settings: { ...settings, gravity: 0.6, scalingRatio: 16, slowDown }
       });
       const start = () => {
         if (layout && !layout.isRunning()) {
@@ -76,7 +104,8 @@
         running = false;
       };
       start();
-      settle = setTimeout(stop, g.order > 600 ? 14000 : 10000);
+      // 4× slower modules need a longer window to reach equilibrium
+      settle = setTimeout(stop, level === 'module' ? 36000 : g.order > 600 ? 14000 : 10000);
       physicsToggle = () => (running ? stop() : start());
 
       renderer = new Sigma(g, container, {
@@ -87,19 +116,22 @@
         defaultEdgeColor: '#222a34',
         minCameraRatio: 0.05,
         maxCameraRatio: 12,
+        defaultDrawNodeHover: drawHover,
         nodeReducer,
         edgeReducer
       });
 
-      // hover highlight
+      // hover highlight — split neighbours into outgoing/incoming
       renderer.on('enterNode', ({ node }) => {
         hovered = node;
-        neighbors = new Set(g.neighbors(node));
+        outN = new Set(g.outNeighbors(node));
+        inN = new Set(g.inNeighbors(node));
         renderer!.refresh({ skipIndexation: true });
       });
       renderer.on('leaveNode', () => {
         hovered = null;
-        neighbors = new Set();
+        outN = new Set();
+        inN = new Set();
         renderer!.refresh({ skipIndexation: true });
       });
       renderer.on('clickNode', ({ node }) =>
