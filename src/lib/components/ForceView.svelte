@@ -53,6 +53,21 @@
     return lines;
   }
 
+  // default (non-hover) node label: word-wrapped + slightly transparent to cut clutter
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function drawLabel(context: CanvasRenderingContext2D, data: any, settings: any) {
+    if (!data.label) return;
+    const size = settings.labelSize ?? 12;
+    context.font = `${settings.labelWeight ?? 'normal'} ${size}px ${settings.labelFont ?? 'monospace'}`;
+    const lines = wrapText(String(data.label), 26);
+    const lineH = size + 2;
+    const x = data.x + data.size + 3;
+    const startY = data.y - ((lines.length - 1) * lineH) / 2;
+    context.fillStyle = 'rgba(215, 220, 227, 0.58)';
+    context.textBaseline = 'middle';
+    lines.forEach((l, i) => context.fillText(l, x, startY + i * lineH));
+  }
+
   // hover "card": opaque dark fill + thin white border so the label reads over edges
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function drawHover(context: CanvasRenderingContext2D, data: any, settings: any) {
@@ -116,6 +131,7 @@
         edgeProgramClasses: { arrow: rendering.EdgeArrowProgram },
         minCameraRatio: 0.05,
         maxCameraRatio: 12,
+        defaultDrawNodeLabel: drawLabel,
         defaultDrawNodeHover: drawHover,
         nodeReducer,
         edgeReducer
