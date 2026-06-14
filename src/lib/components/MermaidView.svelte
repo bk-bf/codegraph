@@ -228,8 +228,18 @@
   }
   function wheel(e: WheelEvent) {
     e.preventDefault();
-    const k = Math.max(0.15, Math.min(3, pz.k * (e.deltaY < 0 ? 1.1 : 0.9)));
-    pz = { ...pz, k };
+    setZoom(pz.k * (e.deltaY < 0 ? 1.1 : 0.9));
+  }
+  function setZoom(k: number) {
+    pz = { ...pz, k: Math.max(0.15, Math.min(3, k)) };
+  }
+  function fit() {
+    const svg = viewport?.querySelector('svg') as SVGGraphicsElement | null;
+    const stage = viewport?.parentElement;
+    if (!svg || !stage) return;
+    const b = svg.getBBox();
+    const k = Math.max(0.15, Math.min(3, Math.min(stage.clientWidth / b.width, (stage.clientHeight - 40) / b.height) * 0.95));
+    pz = { x: 0, y: 0, k };
   }
 
   $effect(() => {
@@ -254,6 +264,12 @@
   {#if focus}
     <button class="back" onclick={() => focusModule.set(null)}>← all modules</button>
   {/if}
+  <div class="zoom">
+    <button onclick={() => setZoom(pz.k * 0.83)} title="Zoom out">−</button>
+    <span class="pct">{Math.round(pz.k * 100)}%</span>
+    <button onclick={() => setZoom(pz.k * 1.2)} title="Zoom in">+</button>
+    <button onclick={fit} title="Fit to screen">⤢</button>
+  </div>
 </div>
 
 <style>
@@ -278,6 +294,36 @@
     top: 12px;
     left: 12px;
     z-index: 2;
+  }
+  .zoom {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 5px;
+  }
+  .zoom button {
+    background: none;
+    border: 0;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font: inherit;
+    padding: 0 5px;
+  }
+  .zoom button:hover {
+    color: var(--accent2);
+  }
+  .pct {
+    color: var(--fg-dim);
+    font-size: 11px;
+    min-width: 34px;
+    text-align: center;
   }
   .viewport :global(g.node) {
     cursor: pointer;
