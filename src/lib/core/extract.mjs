@@ -731,10 +731,22 @@ if (CFG.adrsDocPath) {
   }
 }
 
+// Curated plain-English descriptions (groups/modules/functions), embedded so the
+// viewer is self-contained. Optional — projects without them still extract.
+let descriptions = { groups: {}, modules: {}, functions: {} };
+if (CFG.descriptionsPath) {
+  try {
+    descriptions = JSON.parse(fs.readFileSync(CFG.descriptionsPath, 'utf8'));
+  } catch {
+    /* no descriptions file */
+  }
+}
+
 const out = {
   generatedAt: new Date().toISOString(),
   project: CFG.name,
   root: ROOT,
+  descriptions,
   // Analysis knobs embedded so analysis.mjs is self-describing (no separate config plumbing).
   config: {
     layers: CFG.layers,
