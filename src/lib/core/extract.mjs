@@ -770,6 +770,11 @@ const out = {
 
 const outPath = process.env.CG_OUT || path.join(ROOT, 'graph.json');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
-fs.writeFileSync(outPath, JSON.stringify(out, null, 0));
+// Atomic write: the viewer may be reading this file while the dev watcher
+// re-extracts. Write a temp file then rename (atomic on the same filesystem) so
+// a concurrent reader never parses a half-written graph.
+const tmpPath = `${outPath}.${process.pid}.tmp`;
+fs.writeFileSync(tmpPath, JSON.stringify(out, null, 0));
+fs.renameSync(tmpPath, outPath);
 console.error(`Wrote ${outPath}`);
 console.error(JSON.stringify(out.stats, null, 2));

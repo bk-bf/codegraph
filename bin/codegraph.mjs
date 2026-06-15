@@ -88,9 +88,9 @@ switch (cmd) {
     fs.mkdirSync(DATA, { recursive: true });
     const cfg = loadConfig(path.resolve(REPO, p.path));
     await runExtract(p);
-    console.error(`[codegraph] watching ${cfg.srcDirAbs} — re-extracts on .ts/.svelte change`);
+    console.error(`[codegraph] watching ${cfg.svelteRootAbs} — re-extracts on .ts/.svelte change`);
     let timer = null;
-    fs.watch(cfg.srcDirAbs, { recursive: true }, (_ev, file) => {
+    fs.watch(cfg.svelteRootAbs, { recursive: true }, (_ev, file) => {
       if (!file || !/\.(ts|svelte)$/.test(file) || /\.test\.ts$/.test(file)) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -127,6 +127,6 @@ switch (cmd) {
     break;
   }
   default:
-    console.error('commands: onboard <path> | list | extract [name] | check <name> | diff <name>');
+    console.error('commands: onboard <path> | list | extract [name] | watch [name] | check <name> | diff <name>');
     process.exit(cmd ? 1 : 0);
 }

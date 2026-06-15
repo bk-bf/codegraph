@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { RawGraph } from '$lib/graph/types';
   import type { Sigma } from 'sigma';
-  import { selection, plainLabels, coverage, forceFocus, allLabels } from '$lib/graph/stores';
+  import { selection, stageClick, plainLabels, coverage, forceFocus, allLabels } from '$lib/graph/stores';
 
   let { graph, level }: { graph: RawGraph; level: 'module' | 'function' } = $props();
 
   let container: HTMLDivElement | undefined = $state();
   let renderer: Sigma | null = null;
   let running = $state(false);
+  let ready = $state(false); // false = show the "laying out" overlay (hides setup freeze)
   let plain = $state(false);
   let cov = $state(false);
   let focusMod = $state<string | null>(null);
@@ -124,13 +125,21 @@
     if (!container) return;
     let killed = false;
     let raf = 0;
-    // EASE per frame: each node moves this fraction of the remaining distance to
-    // its settled target. Exponential → monotonic → no overshoot/oscillation.
-    // Smaller = slower. Modules crawl; the function hairball eases a bit faster.
+    // EASE per frame: each node glides this fraction of the remaining distance to
+    // its settled target — exponential, monotonic, no oscillation (the smooth look).
+    // Smaller = slower. Modules crawl; the function hairball eases a touch faster.
     const EASE = level === 'module' ? 0.012 : 0.022;
     const MAX_FRAMES = level === 'module' ? 1800 : 900;
 
+    ready = false; // show the "laying out" overlay until everything is ready
+    const t0 = performance.now();
+
     (async () => {
+      // Let the overlay paint before the heavy synchronous setup (module eval,
+      // Sigma/WebGL init, the layout solve) — all of which would otherwise show
+      // as an on-screen freeze the instant the graph mounts.
+      await new Promise((r) => setTimeout(r, 40));
+      if (killed) return;
       const [{ default: Sigma }, { buildGraph }, fa2, rendering] = await Promise.all([
         import('sigma'),
         import('$lib/graph/build'),
@@ -149,20 +158,10 @@
       });
       const settings = { ...fa2.default.inferSettings(g), gravity: 0.6, scalingRatio: 16, barnesHutOptimize: g.order > 500 };
 
-      // 1. remember the seed (start) positions
+      // Circular seed positions — the animation starts from these (and the
+      // physics button replays from them).
       const seed = new Map<string, { x: number; y: number }>();
       g.forEachNode((n, a) => seed.set(n, { x: a.x, y: a.y }));
-      // 2. compute the fully-settled target layout in one shot (FA2's adaptive
-      //    damping runs to completion here → no oscillation), then capture it
-      fa2.default.assign(g, { iterations: 500, settings });
-      const target = new Map<string, { x: number; y: number }>();
-      g.forEachNode((n, a) => target.set(n, { x: a.x, y: a.y }));
-      // 3. snap back to the seed so we can animate the settle smoothly
-      g.forEachNode((n) => {
-        const s = seed.get(n)!;
-        g.setNodeAttribute(n, 'x', s.x);
-        g.setNodeAttribute(n, 'y', s.y);
-      });
 
       renderer = new Sigma(g, container, {
         renderLabels: true,
@@ -179,10 +178,47 @@
         nodeReducer,
         edgeReducer
       });
+      setRunning(true); // labels off during the settle
 
-      // ---- smooth ease toward the precomputed target ----
+      // Solve the fully-relaxed target layout up front, a chunk per frame (≤8ms)
+      // so the main thread never blocks and the "laying out" indicator keeps
+      // pulsing; the overlay hides the in-progress positions. Then snap back to
+      // the seed so the reveal animates from the start.
+      const target = new Map<string, { x: number; y: number }>();
+      await new Promise<void>((resolve) => {
+        let computed = 0;
+        const chunk = () => {
+          if (killed) return resolve();
+          const tc = performance.now();
+          do {
+            fa2.default.assign(g, { iterations: 1, settings });
+            computed++;
+          } while (computed < 500 && performance.now() - tc < 8);
+          if (computed >= 500) resolve();
+          else requestAnimationFrame(chunk);
+        };
+        requestAnimationFrame(chunk);
+      });
+      if (killed) return;
+      g.forEachNode((n, a) => target.set(n, { x: a.x, y: a.y }));
+      g.forEachNode((n) => {
+        const s = seed.get(n)!;
+        g.setNodeAttribute(n, 'x', s.x);
+        g.setNodeAttribute(n, 'y', s.y);
+      });
+      renderer.refresh({ skipIndexation: true });
+
+      // Hold the overlay for ~0.9s total so the setup freeze is fully hidden and
+      // the reveal is deliberate, then animate on an unblocked main thread.
+      await new Promise((r) => setTimeout(r, Math.max(0, 900 - (performance.now() - t0))));
+      if (killed) return;
+      ready = true;
+
+      // ---- ease to the precomputed target ----
+      // A constant fraction of the remaining distance per frame: smooth and
+      // node-count-independent, so modules and functions glide identically.
       let frames = 0;
-      const step = () => {
+      const ease = () => {
         if (killed || !running) return;
         let moved = 0;
         g.forEachNode((n, a) => {
@@ -199,14 +235,14 @@
           setRunning(false);
           return;
         }
-        raf = requestAnimationFrame(step);
+        raf = requestAnimationFrame(ease);
       };
       physicsToggle = () => {
         if (running) {
           setRunning(false);
           cancelAnimationFrame(raf);
         } else {
-          // replay: scatter back to the seed and ease in again
+          // replay: scatter back to the seed and ease in again (target is cached)
           g.forEachNode((n) => {
             const s = seed.get(n)!;
             g.setNodeAttribute(n, 'x', s.x);
@@ -214,11 +250,10 @@
           });
           frames = 0;
           setRunning(true);
-          raf = requestAnimationFrame(step);
+          raf = requestAnimationFrame(ease);
         }
       };
-      setRunning(true);
-      raf = requestAnimationFrame(step);
+      raf = requestAnimationFrame(ease);
 
       // hover highlight — split neighbours into outgoing/incoming
       renderer.on('enterNode', ({ node }) => {
@@ -236,7 +271,10 @@
       renderer.on('clickNode', ({ node }) =>
         selection.set(level === 'module' ? { type: 'module', module: node } : { type: 'node', id: node })
       );
-      renderer.on('clickStage', () => selection.set(null));
+      renderer.on('clickStage', () => {
+        selection.set(null);
+        stageClick.update((n) => n + 1);
+      });
 
       // ---- dragging: free-move a node; it keeps where you drop it ----
       let dragged: string | null = null;
@@ -294,6 +332,9 @@
 
 <svelte:window onkeydown={onKey} />
 <div class="canvas" bind:this={container}></div>
+{#if !ready}
+  <div class="loading"><span>laying out the graph…</span></div>
+{/if}
 {#if level === 'function' && focusMod}
   <button class="back" onclick={() => forceFocus.set(null)}>← all functions ({shortMod(focusMod)} + callers/callees)</button>
 {/if}
@@ -305,6 +346,34 @@
   .canvas {
     position: absolute;
     inset: 0;
+  }
+  /* Covers the canvas while the graph is built + laid out, so the unavoidable
+     WebGL-init / layout-solve freeze happens behind a quiet loading state rather
+     than as a visible stutter. Same dotted-grid backdrop as the stage. */
+  .loading {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-dim);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    background: radial-gradient(circle at 1px 1px, #1a2029 1px, transparent 0) 0 0 / 26px 26px var(--bg);
+  }
+  .loading span {
+    opacity: 0.75;
+    animation: cg-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes cg-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.8;
+    }
   }
   .phys {
     position: absolute;

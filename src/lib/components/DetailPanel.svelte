@@ -32,9 +32,7 @@
   }
 </script>
 
-{#if !sel}
-  <div class="empty">Select a node, module, or edge.</div>
-{:else if sel.type === 'node' && node(sel.id)}
+{#if sel?.type === 'node' && node(sel.id)}
   {@const n = node(sel.id)!}
   {@const callees = index.callees.get(n.id) ?? []}
   {@const callers = index.callers.get(n.id) ?? []}
@@ -71,7 +69,7 @@
       </ul>
     </div>
   </div>
-{:else if sel.type === 'module' && mod(sel.module)}
+{:else if sel?.type === 'module' && mod(sel.module)}
   {@const m = mod(sel.module)!}
   {@const fns = graph.nodes.filter((x) => x.module === m.module).sort((a, b) => b.inDegree - a.inDegree)}
   {@const outs = (index.modOut.get(m.module) ?? []).slice().sort((a, b) => b.count - a.count)}
@@ -119,10 +117,6 @@
 {/if}
 
 <style>
-  .empty {
-    padding: 24px;
-    color: var(--fg-dim);
-  }
   .dh {
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);

@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { groupColor } from '$lib/graph/colors';
   import { describer } from '$lib/graph/describe';
-  import { selection, focusModule, plainLabels, coverage } from '$lib/graph/stores';
+  import { selection, stageClick, focusModule, plainLabels, coverage } from '$lib/graph/stores';
 
   let { graph, index }: { graph: RawGraph; index: GraphIndex } = $props();
   const prefix = graph.config?.namespacePrefix ?? null;
@@ -321,7 +321,10 @@
   onmousedown={down}
   onwheel={wheel}
   onclick={(e) => {
-    if (e.target === e.currentTarget) selection.set(null);
+    if (e.target === e.currentTarget) {
+      selection.set(null);
+      stageClick.update((n) => n + 1);
+    }
   }}
 >
   <div class="viewport" bind:this={viewport} style="transform: translate({pz.x}px,{pz.y}px) scale({pz.k})"></div>

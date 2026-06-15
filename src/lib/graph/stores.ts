@@ -17,6 +17,9 @@ export const focusModule = writable<string | null>(null);
 export const forceFocus = writable<string | null>(null);
 /** What the detail panel is showing. */
 export const selection = writable<Selection>(null);
+/** Bumped when the user clicks empty graph space — closes the side panel even
+ *  when nothing is selected (setting selection null→null won't notify then). */
+export const stageClick = writable(0);
 
 /** Label nodes with their plain-English description instead of their name. */
 export const plainLabels = writable(false);
