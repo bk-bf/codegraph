@@ -10,7 +10,10 @@
   font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+/* Disable the trackpad two-finger swipe → browser back/forward, which fights the
+   graph's pan/zoom. overscroll-behavior-x stops the history-navigation gesture;
+   the panel's own vertical scrolling is unaffected. */
+html, body { height: 100%; margin: 0; overscroll-behavior-x: none; }
 body { background: var(--bg); color: var(--fg); font-size: 13px; }
 button, select {
   font-family: inherit; font-size: 11px; color: var(--fg);
