@@ -13,7 +13,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { runChecks, portCandidates, orphans, recommendations } from './analysis.mjs';
+import { runChecks, portCandidates, orphans, recommendations, duplicates } from './analysis.mjs';
 
 const shortMod = (m) => m.replace(/^game\//, '');
 
@@ -254,6 +254,7 @@ export function createApi(DIR) {
       'GET /api/recommendations': 'stack best-practice recommendations (runes, component/function size, coverage, DI, cycles)',
       'GET /api/port-candidates?limit=': 'modules ranked as TS→Rust port candidates (compute-heavy, low coupling)',
       'GET /api/orphans': 'standalone private functions with no callers (dead-code candidates)',
+      'GET /api/duplicates': 'standalone functions with the same name in multiple modules (copy-paste dupes)',
       'GET /api/hubs?limit=': 'most-called functions and most-depended-on modules',
     },
   };
@@ -405,6 +406,19 @@ export function createApi(DIR) {
           count: list.length,
           note: 'Standalone private functions with no in-graph callers — dead-code candidates. Excludes class methods and stores (dynamic dispatch / object-literal wiring make 0-callers unreliable there).',
           orphans: list,
+        }), true;
+      }
+
+      if (p === '/api/duplicates') {
+        const groups = duplicates(G).map((g) => ({
+          name: g.name,
+          modules: g.modules.map(shortMod),
+          locations: g.nodes.map(fnRow),
+        }));
+        return ok(res, {
+          count: groups.length,
+          note: 'Standalone functions defined under the SAME name in more than one module — copy-paste duplication to consolidate into a single shared util. Methods are excluded (a shared method name across classes is normal polymorphism). The graph models callables, not plain variables, so duplicate const/let names are not covered.',
+          duplicates: groups,
         }), true;
       }
 

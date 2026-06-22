@@ -359,6 +359,27 @@ function register(decl, qualName, kind, className, sf) {
   if (body) scanList.push({ id, body, decl });
 }
 
+/**
+ * Dotted key path for an arrow/fn-expr that is an OBJECT-LITERAL value, walked up the
+ * property/object chain to the owning declaration. So in
+ *   handlers = { harvest: { complete: (j, g) => … } }
+ * the arrow becomes "handlers.harvest.complete" — i.e. data-driven registry handlers
+ * (ADR-017 job handlers, the W3 command registry, …) get real, named nodes.
+ */
+function objectPropChain(fn, sf) {
+  const keys = [];
+  let p = fn.parent;
+  while (p) {
+    if (ts.isPropertyAssignment(p) && p.name) keys.unshift(p.name.getText(sf));
+    else if ((ts.isVariableDeclaration(p) || ts.isPropertyDeclaration(p)) && p.name) {
+      keys.unshift(p.name.getText(sf));
+      break;
+    } else if (ts.isFunctionLike?.(p) || ts.isClassLike?.(p)) break;
+    p = p.parent;
+  }
+  return keys.length ? keys.join('.') : 'handler';
+}
+
 function isExported(decl) {
   const mods = ts.canHaveModifiers(decl) ? ts.getModifiers(decl) : undefined;
   if (mods && mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) return true;
@@ -458,6 +479,25 @@ function collectNodes(sf) {
     ) {
       // a reactive store: `writable(...)`, `derived(...)`, or a custom store object
       register(node, node.name.text, 'store', null, sf);
+    } else if (
+      (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+      node.parent &&
+      ts.isPropertyAssignment(node.parent) &&
+      !declToId.has(node)
+    ) {
+      // Arrow / function-expression stored as an OBJECT-LITERAL VALUE — i.e. a data-driven
+      // handler or command registry, e.g. `handlers = { harvest: { complete: (j,g) => this._completeHarvest(...) } }`.
+      // These were never registered, so their bodies were never scanned in pass 2 and the calls they
+      // make (→ the real `_complete*`/`_generate*` impls) vanished — making those impls read as having
+      // zero callers / unreachable. Registering the arrow makes its calls real edges.
+      const chain = objectPropChain(node, sf);
+      register(
+        node,
+        ctx.className ? `${ctx.className}.${chain}` : chain,
+        ctx.className ? 'method' : 'function',
+        ctx.className || null,
+        sf
+      );
     }
     ts.forEachChild(node, (c) => visit(c, ctx));
   };
@@ -578,6 +618,71 @@ function maybeStoreEdge(node, ownerId) {
   if (id && nodes.get(id)?.kind === 'store') addEdge(ownerId, id);
 }
 
+// Registry dispatch bridge: a call like `handlers[type].complete(...)` (ADR-017 job handlers, the W3
+// command registry, any `Record<K, {fn}>` dispatched dynamically) can't be statically resolved to one
+// target — `[type]` is a runtime value. So link the caller to EVERY arrow value at that key in the
+// registry's object literal (the correct over-approximation: the dispatch could reach any of them).
+// Without this, the real `_complete*`/`_generate*` impls read as unreachable from the tick loop.
+/** Resolve a property VALUE to a registered function node: an inline arrow/fn-expr, OR an identifier
+ *  that references a named function (`{ [STATE.WORKING]: handleWorking }`). */
+function fnIdFromValue(val) {
+  if (ts.isArrowFunction(val) || ts.isFunctionExpression(val)) return declToId.get(val) || null;
+  if (ts.isIdentifier(val)) return resolveTargetId(checker.getSymbolAtLocation(val));
+  return null;
+}
+/** Collect registered function nodes from a registry object literal. `propName === null` → every
+ *  function value (a `registry[key]()` dispatch — the value IS the fn); else only values under that
+ *  key (a `registry[key].propName()` dispatch). Recurses through nested object literals. */
+function collectRegistryFns(objLit, propName, out) {
+  for (const p of objLit.properties) {
+    if (!ts.isPropertyAssignment(p) || !p.name) continue;
+    const keyMatch = propName === null || p.name.getText() === propName;
+    const id = keyMatch ? fnIdFromValue(p.initializer) : null;
+    if (id) out.push(id);
+    else if (ts.isObjectLiteralExpression(p.initializer))
+      collectRegistryFns(p.initializer, propName, out); // nested (e.g. keyed by job type)
+  }
+}
+/** Drill an expression down to the object-literal it ultimately refers to (through `[key]`, locals,
+ *  and `this.field`), so a dynamic dispatch base resolves to the registry's literal. */
+function registryObjLit(expr, depth = 0) {
+  if (!expr || depth > 6) return null;
+  if (ts.isElementAccessExpression(expr) || ts.isParenthesizedExpression(expr))
+    return registryObjLit(expr.expression, depth + 1);
+  let sym;
+  if (ts.isPropertyAccessExpression(expr)) sym = checker.getSymbolAtLocation(expr.name);
+  else if (ts.isIdentifier(expr)) sym = checker.getSymbolAtLocation(expr);
+  else return null;
+  for (const d of sym?.declarations || []) {
+    const init =
+      ts.isVariableDeclaration(d) || ts.isPropertyDeclaration(d) ? d.initializer : undefined;
+    if (!init) continue;
+    if (ts.isObjectLiteralExpression(init)) return init;
+    const nested = registryObjLit(init, depth + 1); // e.g. `const h = this.handlers[type]`
+    if (nested) return nested;
+  }
+  return null;
+}
+function maybeRegistryDispatch(node, ownerId) {
+  if (!ts.isCallExpression(node)) return;
+  const callee = node.expression;
+  let objLit = null;
+  let propName = null;
+  if (ts.isPropertyAccessExpression(callee)) {
+    objLit = registryObjLit(callee.expression); // registry[key].method(...) or obj.method(...)
+    propName = callee.name.text;
+  } else {
+    // `registry[key](...)`, or a local that holds it (`const h = registry[key]; h(...)`) — the
+    // callee itself drills down to the registry, and the value at that key IS the fn (propName null).
+    objLit = registryObjLit(callee);
+    propName = null;
+  }
+  if (!objLit) return;
+  const out = [];
+  collectRegistryFns(objLit, propName, out);
+  for (const tid of out) addEdge(ownerId, tid);
+}
+
 function scanCalls(body, ownerId) {
   const visit = (node) => {
     // do not descend into nested registered functions; they own their calls
@@ -591,12 +696,18 @@ function scanCalls(body, ownerId) {
       }
       const targetId = resolveTargetId(sym);
       if (targetId) addEdge(ownerId, targetId);
-      else maybeRustBoundary(node, ownerId);
+      else {
+        maybeRustBoundary(node, ownerId);
+        maybeRegistryDispatch(node, ownerId); // dynamic registry dispatch → all matching handlers
+      }
       maybeStoreEdge(node, ownerId);
     }
     ts.forEachChild(node, visit);
   };
-  ts.forEachChild(body, visit);
+  // Visit the body NODE itself, not just its children: a concise arrow's body IS the expression
+  // (e.g. `(job, gs) => this._completeHarvest(job, gs)` — the body is the CallExpression), so
+  // iterating only its children dropped the call. For block bodies this is equivalent.
+  visit(body);
 }
 
 for (const { id, body } of scanList) scanCalls(body, id);
@@ -611,7 +722,10 @@ function scanAllCalls(sf, ownerId) {
       if (!sym && ts.isPropertyAccessExpression(callee)) sym = checker.getSymbolAtLocation(callee.name);
       const targetId = resolveTargetId(sym);
       if (targetId) addEdge(ownerId, targetId);
-      else maybeRustBoundary(node, ownerId);
+      else {
+        maybeRustBoundary(node, ownerId);
+        maybeRegistryDispatch(node, ownerId); // dynamic registry dispatch → all matching handlers
+      }
       maybeStoreEdge(node, ownerId);
     }
     ts.forEachChild(node, visit);

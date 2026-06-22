@@ -38,6 +38,32 @@ const ADR_RULE_TYPES = {
         line: from.line
       });
     }
+  },
+  // A specific function (`callee`, by short name; or any of `callees`) may be called ONLY from the
+  // functions in `allowFrom` (matched by short name OR `Module::short`). Use it to fence an expensive /
+  // dangerous primitive behind a single seam — e.g. ADR-026's full-map terrain builders, which the
+  // per-delta render path must never reach. Flags every disallowed caller's call edge.
+  'restricted-callee': (r, { graph, byId, add, sm }) => {
+    const callees = new Set([r.callee, ...(r.callees || [])].filter(Boolean));
+    const allow = new Set(r.allowFrom || []);
+    for (const e of graph.edges) {
+      const to = byId.get(e.to);
+      if (!to || !callees.has(to.short)) continue;
+      const from = byId.get(e.from);
+      if (!from) continue;
+      if (
+        allow.has(from.short) ||
+        allow.has(`${sm(from.module)}::${from.short}`) ||
+        allow.has(`${from.module}::${from.short}`)
+      )
+        continue;
+      add(
+        r.severity || 'error',
+        r.adr,
+        `${sm(from.module)}::${from.short} calls ${to.short} — ${r.msg}`,
+        { module: from.module, id: from.id, file: from.file, line: from.line }
+      );
+    }
   }
 };
 
@@ -117,11 +143,16 @@ export function runChecks(graph) {
     }
   }
 
-  // 5. orphans (standalone private fns with no callers; class methods/stores excluded)
+  // 5. orphans (standalone private fns with no callers; class methods/object-literal methods/stores excluded)
   const inDeg = new Map();
   for (const e of graph.edges) inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1);
   for (const n of graph.nodes) {
     if (n.kind !== 'function' || n.className) continue;
+    // Object-literal methods (e.g. a null-object sink `noopSink.logX` assigned to an interface-typed
+    // binding and dispatched dynamically through it) have unreliable 0-caller counts — the same
+    // "object-literal wiring" rationale that already excludes class methods/stores. Their `short` is
+    // `object.method` (dotted), so skip those rather than flag them as dead code.
+    if (n.short && n.short.includes('.')) continue;
     if (n.exported || n.tested || inDeg.get(n.id) || n.group === 'stores') continue;
     add('warn', 'orphan', `${sm(n.module)}::${n.short} is never called (dead code?)`, { module: n.module, id: n.id, file: n.file, line: n.line });
   }
@@ -135,8 +166,20 @@ export function runChecks(graph) {
     }
   }
 
+  // 7. duplicate definitions — the same standalone function name defined in more than one module
+  //    (copy-paste helpers that should be a single shared util, e.g. two `dist()` in different files).
+  for (const g of duplicates(graph)) {
+    const first = g.nodes[0];
+    add('warn', 'duplicate', `${g.name} is defined in ${g.modules.length} modules (${g.modules.map(sm).join(', ')}) — consolidate into one shared util`, {
+      module: first.module,
+      id: first.id,
+      file: first.file,
+      line: first.line
+    });
+  }
+
   const errors = findings.filter((f) => f.level === 'error').length;
-  const rules = [...adrRuleIds, 'cycle', 'layers', 'god-module', 'orphan', 'adr-coverage'];
+  const rules = [...adrRuleIds, 'cycle', 'layers', 'god-module', 'orphan', 'duplicate', 'adr-coverage'];
   return { findings, errors, warnings: findings.length - errors, rules };
 }
 
@@ -261,4 +304,36 @@ export function orphans(graph) {
   return graph.nodes.filter(
     (n) => n.kind === 'function' && !n.className && !n.exported && !n.tested && !inDeg.get(n.id) && n.group !== 'stores'
   );
+}
+
+/**
+ * Duplicate definitions: the SAME name defined as a standalone function in MORE THAN ONE module —
+ * copy-paste helpers that should be one shared util (the original motivator: two `dist()` in
+ * different files, plus the per-file Manhattan/Chebyshev re-implementations). Returns
+ * `[{ name, modules, nodes }]`, most-duplicated first.
+ *
+ * Scope is deliberately standalone functions: class/object-literal METHODS sharing a name across
+ * types is normal polymorphism (interface impls), not duplication, so they're excluded — same
+ * rationale the orphan check uses. NB the graph models callables, not plain variables, so this can't
+ * flag duplicate `const`/`let` names; that would need the extractor to emit variable nodes.
+ */
+// A name shared across MORE than this many modules is almost always a deliberate convention/interface
+// (e.g. ADR-017's per-job `generate`/`complete` handlers, a `set` store contract) — NOT accidental
+// copy-paste. Real duplication is a helper that got pasted into 2–3 files. Cap keeps the flag precise.
+const MAX_DUP_MODULES = 4;
+
+export function duplicates(graph) {
+  const byName = new Map();
+  for (const n of graph.nodes) {
+    if (n.kind !== 'function' || n.className) continue;
+    if (n.short && n.short.includes('.')) continue; // object-literal method (dotted short name)
+    if (!byName.has(n.short)) byName.set(n.short, []);
+    byName.get(n.short).push(n);
+  }
+  const groups = [];
+  for (const [name, nodes] of byName) {
+    const modules = [...new Set(nodes.map((n) => n.module))];
+    if (modules.length > 1 && modules.length <= MAX_DUP_MODULES) groups.push({ name, modules, nodes });
+  }
+  return groups.sort((a, b) => b.modules.length - a.modules.length || a.name.localeCompare(b.name));
 }
