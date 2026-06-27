@@ -318,15 +318,21 @@ export function orphans(graph) {
  * flag duplicate `const`/`let` names; that would need the extractor to emit variable nodes.
  */
 // A name shared across MORE than this many modules is almost always a deliberate convention/interface
-// (e.g. ADR-017's per-job `generate`/`complete` handlers, a `set` store contract) — NOT accidental
-// copy-paste. Real duplication is a helper that got pasted into 2–3 files. Cap keeps the flag precise.
+// (e.g. ADR-017's per-job `generate`/`complete` handlers) — NOT accidental copy-paste. Real
+// duplication is a helper that got pasted into 2–3 files. The cap keeps the flag precise.
 const MAX_DUP_MODULES = 4;
+
+// Framework/observer CONTRACT method names that legitimately recur in every store and so are never
+// "duplication": the Svelte store contract (`set`/`update`/`subscribe`). Each custom store implements
+// them independently — flagging them is pure noise.
+const CONTRACT_METHOD_NAMES = new Set(['set', 'update', 'subscribe']);
 
 export function duplicates(graph) {
   const byName = new Map();
   for (const n of graph.nodes) {
     if (n.kind !== 'function' || n.className) continue;
     if (n.short && n.short.includes('.')) continue; // object-literal method (dotted short name)
+    if (CONTRACT_METHOD_NAMES.has(n.short)) continue; // store/observer contract — recurs by design
     if (!byName.has(n.short)) byName.set(n.short, []);
     byName.get(n.short).push(n);
   }
