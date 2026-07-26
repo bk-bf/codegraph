@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { RawGraph } from '$lib/graph/types';
   import type { Sigma } from 'sigma';
-  import { selection, stageClick, plainLabels, coverage, forceFocus, allLabels } from '$lib/graph/stores';
+  import { selection, stageClick, plainLabels, coverage, forceFocus, allLabels, hiddenGroups } from '$lib/graph/stores';
 
   let { graph, level }: { graph: RawGraph; level: 'module' | 'function' } = $props();
 
@@ -18,6 +18,8 @@
   forceFocus.subscribe((v) => (focusMod = v));
   let showAll = $state(false);
   allLabels.subscribe((v) => (showAll = v));
+  let hidden = $state<Set<string>>(new Set());
+  hiddenGroups.subscribe((v) => (hidden = v));
   const shortMod = (m: string) => m.replace(/^game\//, '');
 
   const DIM = '#222831';
@@ -30,6 +32,7 @@
   let inN = new Set<string>(); // nodes that call the hovered node
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function nodeReducer(node: string, data: any) {
+    if (hidden.size && hidden.has(data.group)) return { ...data, hidden: true };
     const base = showAll ? { ...data, forceLabel: true } : data;
     if (!hovered) return base;
     if (node === hovered) return { ...base, highlighted: true, forceLabel: true, zIndex: 3 };
@@ -39,8 +42,12 @@
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function edgeReducer(edge: string, data: any) {
-    if (!hovered || !renderer) return data;
+    if (!renderer) return data;
     const g = renderer.getGraph();
+    // hide edges touching a filtered-out group
+    if (hidden.size && (hidden.has(g.getNodeAttribute(g.source(edge), 'group')) || hidden.has(g.getNodeAttribute(g.target(edge), 'group'))))
+      return { ...data, hidden: true };
+    if (!hovered) return data;
     if (g.source(edge) === hovered) return { ...data, color: OUT, size: (data.size || 1) + 1.5, zIndex: 2 };
     if (g.target(edge) === hovered) return { ...data, color: IN, size: (data.size || 1) + 1.5, zIndex: 2 };
     return { ...data, hidden: true };
@@ -306,9 +313,10 @@
     };
   });
 
-  // toggling "all names" just re-runs the reducers — no relayout
+  // toggling "all names" or a type filter just re-runs the reducers — no relayout
   $effect(() => {
     void showAll;
+    void hidden;
     renderer?.refresh({ skipIndexation: true });
   });
 

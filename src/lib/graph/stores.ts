@@ -27,3 +27,5 @@ export const plainLabels = writable(false);
 export const coverage = writable(false);
 /** Force every node's label to show in the force view, ignoring zoom/size culling. */
 export const allLabels = writable(false);
+/** Groups (file types / layers) toggled OFF in the legend — hidden in the force view. */
+export const hiddenGroups = writable<Set<string>>(new Set());
