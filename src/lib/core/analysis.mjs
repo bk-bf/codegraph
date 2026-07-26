@@ -153,7 +153,9 @@ export function runChecks(graph) {
     // "object-literal wiring" rationale that already excludes class methods/stores. Their `short` is
     // `object.method` (dotted), so skip those rather than flag them as dead code.
     if (n.short && n.short.includes('.')) continue;
-    if (n.exported || n.tested || inDeg.get(n.id) || n.group === 'stores') continue;
+    // `moduleUsed` = called/referenced at module top level (table builders, import-time wiring) —
+    // module init runs it, so it is not dead code even with zero in-graph callers.
+    if (n.exported || n.tested || n.moduleUsed || inDeg.get(n.id) || n.group === 'stores') continue;
     add('warn', 'orphan', `${sm(n.module)}::${n.short} is never called (dead code?)`, { module: n.module, id: n.id, file: n.file, line: n.line });
   }
 
@@ -302,7 +304,8 @@ export function orphans(graph) {
   const inDeg = new Map();
   for (const e of graph.edges) inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1);
   return graph.nodes.filter(
-    (n) => n.kind === 'function' && !n.className && !n.exported && !n.tested && !inDeg.get(n.id) && n.group !== 'stores'
+    (n) =>
+      n.kind === 'function' && !n.className && !n.exported && !n.tested && !n.moduleUsed && !inDeg.get(n.id) && n.group !== 'stores'
   );
 }
 
@@ -332,6 +335,7 @@ export function duplicates(graph) {
   for (const n of graph.nodes) {
     if (n.kind !== 'function' || n.className) continue;
     if (n.short && n.short.includes('.')) continue; // object-literal method (dotted short name)
+    if (n.nested) continue; // closure-scoped local — a shared generic name is not copy-paste
     if (CONTRACT_METHOD_NAMES.has(n.short)) continue; // store/observer contract — recurs by design
     if (!byName.has(n.short)) byName.set(n.short, []);
     byName.get(n.short).push(n);

@@ -353,6 +353,10 @@ function register(decl, qualName, kind, className, sf) {
     loc: met.loc,
     chars: met.chars,
     numeric: met.numeric,
+    // Closure-scoped: declared INSIDE another function (a local helper, an object-literal value in a
+    // call argument…). Name collisions across modules are meaningless for these — the duplicate
+    // check skips them (a nested `clear`/`logActivity` is not copy-paste of a module-scope one).
+    nested: !!ts.findAncestor(decl.parent, (n) => isFunctionLike(n)),
     tested: false
   });
   const body = /** @type {any} */ (decl).body;
@@ -683,6 +687,50 @@ function maybeRegistryDispatch(node, ownerId) {
   for (const tid of out) addEdge(ownerId, tid);
 }
 
+// Callback bridge: a function REFERENCED as a call argument (`forEach(sortNode)`,
+// `addEventListener('scroll', onScroll)`, `setOutputSink(publish)`) or as a function value inside
+// an object-literal argument (sink/options bundles: `installLogSink({ logActivity: … })`,
+// `pickUpFromTile(gs, …, { acceptTest: (rid) => … })`) is not a CallExpression callee, so it read
+// as having zero callers — the false-orphan batch of 2026-07-02. Passing ≠ calling, but the
+// receiver invoking it is the overwhelmingly common case: the same over-approximation the registry
+// bridge makes, with the same caveat.
+/** Strip type-level wrappers (`expr as T`, `expr satisfies T`, `(expr)`, `expr!`) off an argument —
+ *  `setSimLogSink({ … } as SimLogSink)` must still expose the object literal underneath. */
+function unwrapExpr(e) {
+  while (
+    e &&
+    (ts.isParenthesizedExpression(e) ||
+      ts.isAsExpression(e) ||
+      (ts.isSatisfiesExpression?.(e) ?? false) ||
+      ts.isNonNullExpression(e))
+  ) {
+    e = e.expression;
+  }
+  return e;
+}
+/** Resolve an argument that references a registered function/method to its node id. */
+function refArgTargetId(arg) {
+  let sym = null;
+  if (ts.isIdentifier(arg)) sym = checker.getSymbolAtLocation(arg);
+  else if (ts.isPropertyAccessExpression(arg)) sym = checker.getSymbolAtLocation(arg.name);
+  const id = resolveTargetId(sym);
+  const kind = id && nodes.get(id)?.kind;
+  return kind === 'function' || kind === 'method' ? id : null;
+}
+/** Add caller→callback edges for every function-referencing argument of a call. */
+function addCallbackArgEdges(node, ownerId) {
+  for (const rawArg of node.arguments || []) {
+    const arg = unwrapExpr(rawArg);
+    const tid = refArgTargetId(arg);
+    if (tid) addEdge(ownerId, tid);
+    else if (ts.isObjectLiteralExpression(arg)) {
+      const out = [];
+      collectRegistryFns(arg, null, out); // every fn value, incl. nested literals
+      for (const t of out) addEdge(ownerId, t);
+    }
+  }
+}
+
 function scanCalls(body, ownerId) {
   const visit = (node) => {
     // do not descend into nested registered functions; they own their calls
@@ -700,6 +748,7 @@ function scanCalls(body, ownerId) {
         maybeRustBoundary(node, ownerId);
         maybeRegistryDispatch(node, ownerId); // dynamic registry dispatch → all matching handlers
       }
+      addCallbackArgEdges(node, ownerId); // fn refs passed as arguments (callback bridge)
       maybeStoreEdge(node, ownerId);
     }
     ts.forEachChild(node, visit);
@@ -726,11 +775,48 @@ function scanAllCalls(sf, ownerId) {
         maybeRustBoundary(node, ownerId);
         maybeRegistryDispatch(node, ownerId); // dynamic registry dispatch → all matching handlers
       }
+      addCallbackArgEdges(node, ownerId); // fn refs passed as arguments (callback bridge)
       maybeStoreEdge(node, ownerId);
     }
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(sf, visit);
+}
+
+// Module top-level usage (.ts files): table builders (`raw.map(toDefinition)`), module-scope
+// helper calls (`clips('fowl', 1)` building a const record), and wiring like `self.onmessage = …`
+// run at import time and have NO registered caller node to hang an edge on. Mark the target
+// `moduleUsed` instead — the orphan check treats it like `exported`/`tested` (module init runs it,
+// so it is not dead code). Svelte components don't need this: scanAllCalls attributes their whole
+// <script> (top level included) to the component node.
+function markModuleUsed(id) {
+  if (id && nodes.has(id)) nodes.get(id).moduleUsed = true;
+}
+function scanModuleLevel(sf) {
+  const visit = (node) => {
+    if (isFunctionLike(node) && declToId.has(node)) return; // registered fns own their calls
+    if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+      const callee = node.expression;
+      let sym = checker.getSymbolAtLocation(callee);
+      if (!sym && ts.isPropertyAccessExpression(callee)) sym = checker.getSymbolAtLocation(callee.name);
+      markModuleUsed(resolveTargetId(sym));
+      for (const rawArg of node.arguments || []) {
+        const arg = unwrapExpr(rawArg);
+        const tid = refArgTargetId(arg);
+        if (tid) markModuleUsed(tid);
+        else if (ts.isObjectLiteralExpression(arg)) {
+          const out = [];
+          collectRegistryFns(arg, null, out);
+          for (const t of out) markModuleUsed(t);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sf, visit);
+}
+for (const sf of sourceFiles) {
+  if (!svelteVirtual.has(sf.fileName)) scanModuleLevel(sf);
 }
 
 // Svelte reactive reads: `$gameState` auto-subscribes to the gameState store.
