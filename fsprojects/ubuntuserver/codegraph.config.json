@@ -1,0 +1,29 @@
+{
+  "name": "ubuntuserver",
+  "kind": "filesystem",
+  "host": "ubuntuserver",
+  "roots": [
+    "/home/ubuntu/server",
+    "/home/ubuntu/scripts",
+    "/home/ubuntu/docker",
+    "/home/ubuntu/.config",
+    "/etc/systemd/system"
+  ],
+  "ignore": [
+    "**/node_modules", "**/.git", "**/target", "**/dist", "**/build",
+    "**/.svelte-kit", "**/.next", "**/.cache", "**/__pycache__", "**/.venv",
+    "**/venv", "**/.ruff_cache", "**/vendor", "**/.smart-env", "**/.obsidian",
+    "**/coverage", "**/.turbo", "**/.pnpm-store", "**/go/pkg", "**/snap",
+    "**/Cache", "**/CachedData", "**/logs", "**/.npm"
+  ],
+  "includeExt": [
+    "md", "mdx",
+    "service", "timer", "socket", "target", "mount", "path",
+    "conf", "ini", "config", "env", "rules", "hook",
+    "toml", "yaml", "yml",
+    "sh", "bash", "zsh", "fish", "nix"
+  ],
+  "includeName": ["Dockerfile", "docker-compose*", "*.desktop"],
+  "maxFileSize": 1048576,
+  "staleDays": 90
+}

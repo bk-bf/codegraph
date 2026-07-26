@@ -33,8 +33,10 @@ async function runExtract(project) {
   const cfg = loadConfig(projectDir);
   process.env.CG_PROJECT = projectDir;
   process.env.CG_OUT = path.join(DATA, `${cfg.name}.json`);
-  // extract.mjs runs on import; cache-bust so repeated calls re-run in one process.
-  await import('../src/lib/core/extract.mjs?ts=' + Date.now());
+  // Plane B: a filesystem project indexes files on a machine, not code symbols.
+  const extractor = cfg.kind === 'filesystem' ? 'fsindex' : 'extract';
+  // extractor runs on import; cache-bust so repeated calls re-run in one process.
+  await import(`../src/lib/core/${extractor}.mjs?ts=` + Date.now());
 }
 
 const [cmd, arg] = process.argv.slice(2);
@@ -45,11 +47,18 @@ switch (cmd) {
     if (!arg) throw new Error('usage: codegraph onboard <path-to-project>');
     const abs = path.resolve(arg);
     const cfg = loadConfig(abs); // throws if no codegraph.config.json
+    const kind = cfg.kind === 'filesystem' ? 'filesystem' : 'code';
+    // machine: explicit config wins, else keep any manually-set registry value,
+    // else a filesystem graph is its own machine (host); code projects stay unset.
     const existing = resolveProject(reg, cfg.name);
-    if (existing) existing.path = abs;
-    else reg.projects.push({ name: cfg.name, path: abs });
+    const machine = cfg.machine ?? existing?.machine ?? (kind === 'filesystem' ? cfg.host || cfg.name : undefined);
+    const entry = existing ?? { name: cfg.name };
+    entry.path = abs;
+    entry.kind = kind;
+    if (machine) entry.machine = machine;
+    if (!existing) reg.projects.push(entry);
     writeRegistry(reg);
-    console.error(`Onboarded ${cfg.name} -> ${abs}`);
+    console.error(`Onboarded ${cfg.name} [${kind}${machine ? ' @ ' + machine : ''}] -> ${abs}`);
     break;
   }
   case 'list':

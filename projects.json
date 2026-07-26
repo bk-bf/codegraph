@@ -1,5 +1,24 @@
 {
   "projects": [
-    { "name": "Fantasia4x", "path": "../Fantasia4x" }
+    {
+      "name": "Fantasia4x",
+      "path": "../Fantasia4x",
+      "machine": "laptop",
+      "kind": "code"
+    },
+    {
+      "name": "laptop",
+      "path": "/home/kirill/Documents/Projects/codegraph/fsprojects/laptop",
+      "machine": "laptop",
+      "kind": "filesystem",
+      "tsHost": "cachyos-x8664"
+    },
+    {
+      "name": "ubuntuserver",
+      "path": "/home/kirill/Documents/Projects/codegraph/fsprojects/ubuntuserver",
+      "machine": "ubuntuserver",
+      "kind": "filesystem",
+      "tsHost": "ubuntuserver"
+    }
   ]
 }
