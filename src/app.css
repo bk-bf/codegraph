@@ -14,7 +14,7 @@
    graph's pan/zoom. overscroll-behavior-x stops the history-navigation gesture;
    the panel's own vertical scrolling is unaffected. */
 html, body { height: 100%; margin: 0; overscroll-behavior-x: none; }
-body { background: var(--bg); color: var(--fg); font-size: 13px; }
+body { background: var(--bg); color: var(--fg); font-size: 13px; display: flex; flex-direction: column; }
 button, select {
   font-family: inherit; font-size: 11px; color: var(--fg);
   background: var(--bg); border: 1px solid var(--border);

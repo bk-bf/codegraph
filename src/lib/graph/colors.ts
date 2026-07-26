@@ -13,7 +13,14 @@ export const GROUP_COLORS: Record<string, string> = {
   routes: '#ffd166',
   rust: '#dea584',
   database: '#9ece6a',
-  ai: '#bb9af7'
+  ai: '#bb9af7',
+  // Plane B — filesystem/infra graph groups (see core/fsindex.mjs)
+  systemd: '#ff6b9d', // units + deps
+  docs: '#7ee787', // .docs/*.md
+  notes: '#c792ea', // other markdown
+  config: '#57c7ff', // json/toml/yaml/conf/…
+  scripts: '#f5a623', // shell/bin
+  other: '#8b94a3' // everything else
 };
 
 export const groupColor = (g: string): string => GROUP_COLORS[g] ?? '#8b94a3';

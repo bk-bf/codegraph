@@ -1,9 +1,11 @@
 import type { PageServerLoad } from './$types';
-import { listProjects, loadGraph } from '$lib/server/data';
+import { listProjects, loadGraph, listMachines, machineOf } from '$lib/server/data';
 
 export const load: PageServerLoad = ({ url }) => {
   const projects = listProjects();
+  const machines = listMachines();
   const current = url.searchParams.get('project') ?? projects[0] ?? null;
   const graph = current ? loadGraph(current) : null;
-  return { projects, current, graph };
+  const currentMachine = machineOf(current, machines);
+  return { projects, machines, current, currentMachine, graph };
 };

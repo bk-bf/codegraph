@@ -14,6 +14,10 @@
 
   let { data } = $props();
   const index = $derived(data.graph ? buildIndex(data.graph) : null);
+  // filesystem/infra graphs (Plane B) get file-oriented labels + the force view
+  const isFs = $derived((data.graph as unknown as { kind?: string })?.kind === 'filesystem');
+  // the machine whose tab is active — its "all" (whole-machine) view + code projects nest under it
+  const activeMachine = $derived(data.machines.find((m) => m.name === data.currentMachine) ?? null);
 
   let mode = $state<ViewMode>('layered');
   viewMode.subscribe((m) => (mode = m));
@@ -86,8 +90,14 @@
     forceFocus.set(null); // the toggle shows everything at this level
     viewMode.set(m);
   }
-  function switchProject(e: Event) {
-    goto(`/?project=${encodeURIComponent((e.target as HTMLSelectElement).value)}`, { invalidateAll: true });
+  // The mermaid "layered" view is code-architecture only; a filesystem graph has no
+  // layer model, so land it on the force view instead of an empty layered diagram.
+  $effect(() => {
+    if (isFs && mode === 'layered') setMode('functions');
+  });
+  function switchProject(name: string) {
+    if (name === data.current) return;
+    goto(`/?project=${encodeURIComponent(name)}`, { invalidateAll: true });
   }
   // Rebuild the graph from the current source, on demand (no background watcher).
   let refreshing = $state(false);
@@ -106,54 +116,100 @@
   }
 </script>
 
-<header>
-  <strong>codegraph</strong>
-  <span class="sep">·</span>
-  <button class="seg" class:on={mode === 'layered'} onclick={() => setMode('layered')}>layered</button>
-  <button class="seg" class:on={mode === 'modules'} onclick={() => setMode('modules')}>modules</button>
-  <button class="seg" class:on={mode === 'functions'} onclick={() => setMode('functions')}>functions</button>
-  {#if data.graph}<SearchBar graph={data.graph} />{/if}
-  <span class="grow"></span>
-  {#if data.graph}
-    <span class="stats">
-      <button class="statbtn" class:on={panel === 'list' && listType === 'functions'} onclick={() => openList('functions')}>{data.graph.stats.functions} fns</button> ·
-      <button class="statbtn" class:on={panel === 'list' && listType === 'calls'} onclick={() => openList('calls')}>{data.graph.stats.edges} calls</button> ·
-      <button class="statbtn" class:on={panel === 'list' && listType === 'modules'} onclick={() => openList('modules')}>{data.graph.stats.modules} modules</button> ·
-      <button class="statbtn" class:on={panel === 'list' && listType === 'files'} onclick={() => openList('files')}>{data.graph.stats.files} files</button>
-    </span>
-    <button
-      class="icon"
-      class:spin={refreshing}
-      title="Rebuild the graph from the current source — last built {new Date(data.graph.generatedAt).toLocaleString()}"
-      aria-label="Rebuild graph"
-      onclick={refresh}
-      disabled={refreshing}><span class="ico">↻</span></button>
-    <button class="icon" class:on={panel === 'insights' && asideOpen} title="Insights" aria-label="Insights" onclick={toggleInsights}>⚑</button>
-  {/if}
-  <div class="menu" onfocusout={onMenuBlur}>
-    <button class="icon" class:on={menuOpen} title="More" aria-label="More options" onclick={() => (menuOpen = !menuOpen)}>⋯</button>
-    {#if menuOpen}
-      <div class="menupop">
-        {#if data.projects.length}
-          <div class="mlabel">Project</div>
-          <select onchange={switchProject} value={data.current}>
-            {#each data.projects as p}<option value={p}>{p}</option>{/each}
-          </select>
-        {/if}
-        <div class="mlabel">Labels</div>
-        <button class="mitem" class:on={plain} onclick={() => plainLabels.set(!plain)}>plain-English descriptions</button>
-        <button class="mitem" class:on={cov} onclick={() => coverage.set(!cov)}>test-coverage colours</button>
-        {#if mode !== 'layered'}
-          <button class="mitem" class:on={names} onclick={() => allLabels.set(!names)}>all node names</button>
-        {/if}
-        {#if data.current}
-          <div class="mlabel">Export</div>
-          <a class="mitem" href="/export?project={encodeURIComponent(data.current)}" title="Download a self-contained offline HTML snapshot">⇩ offline HTML snapshot</a>
-        {/if}
+<!-- Single top bar — devices shown via the dashboard-style connection pill. -->
+<div class="topbar">
+  <span class="sw-brand">codegraph</span>
+  {#if data.machines.length}
+    {@const online = data.machines.filter((m) => m.status === 'online').length}
+    {@const curView = activeMachine && data.current === activeMachine.all ? 'all' : data.current}
+    <div class="conn">
+      <button class="conn-pill" title="{online} of {data.machines.length} machines online — pick a machine · view">
+        <span class="dot {activeMachine?.status === 'online' ? 'ok' : activeMachine?.status === 'cached' ? 'stale' : 'off'}"></span>
+        <span class="conn-active">{activeMachine?.name ?? '—'}</span>
+        <span class="conn-sep">/</span>
+        <span class="conn-view">{curView}</span>
+        <span class="conn-count">{online}/{data.machines.length}</span>
+        <span class="caret">▾</span>
+      </button>
+      <div class="conn-pop">
+        {#each data.machines as m}
+          <div class="conn-group">
+            <button
+              class="conn-head"
+              class:active={m.name === data.currentMachine}
+              onclick={() => switchProject(m.all ?? m.projects[0])}
+              title={m.indexedAt ? 'indexed ' + new Date(m.indexedAt).toLocaleString() : ''}
+            >
+              <span class="dot {m.status === 'online' ? 'ok' : m.status === 'cached' ? 'stale' : 'off'}"></span>
+              <span class="conn-name">{m.name}</span>
+              <span class="conn-stat">{m.status}</span>
+            </button>
+            <div class="conn-items">
+              {#if m.all}
+                <button class="conn-item" class:active={data.current === m.all} onclick={() => switchProject(m.all!)}>all</button>
+              {/if}
+              {#each m.projects as p}
+                <button class="conn-item" class:active={data.current === p} onclick={() => switchProject(p)}>{p}</button>
+              {/each}
+            </div>
+          </div>
+        {/each}
       </div>
+    </div>
+  {/if}
+  <span class="vsep"></span>
+  {#if !isFs}
+    <button class="seg" class:on={mode === 'layered'} onclick={() => setMode('layered')}>layered</button>
+  {/if}
+  <button class="seg" class:on={mode === 'modules'} onclick={() => setMode('modules')}>{isFs ? 'folders' : 'modules'}</button>
+  <button class="seg" class:on={mode === 'functions'} onclick={() => setMode('functions')}>{isFs ? 'files' : 'functions'}</button>
+  {#if data.graph}<SearchBar graph={data.graph} />{/if}
+
+  <span class="topbar-meta">
+    {#if data.graph}
+      {#if isFs}
+        <span class="stats">
+          <button class="statbtn" class:on={panel === 'list' && listType === 'files'} onclick={() => openList('files')}>{data.graph.stats.files.toLocaleString()} files</button> ·
+          <button class="statbtn" class:on={panel === 'list' && listType === 'calls'} onclick={() => openList('calls')}>{data.graph.stats.edges.toLocaleString()} links</button> ·
+          <button class="statbtn" class:on={panel === 'list' && listType === 'modules'} onclick={() => openList('modules')}>{data.graph.stats.modules.toLocaleString()} folders</button> ·
+          <span class="stale" title="files not edited in ≥90 days">{(data.graph.stats as { stale?: number }).stale ?? 0} stale</span>
+        </span>
+      {:else}
+        <span class="stats">
+          <button class="statbtn" class:on={panel === 'list' && listType === 'functions'} onclick={() => openList('functions')}>{data.graph.stats.functions} fns</button> ·
+          <button class="statbtn" class:on={panel === 'list' && listType === 'calls'} onclick={() => openList('calls')}>{data.graph.stats.edges} calls</button> ·
+          <button class="statbtn" class:on={panel === 'list' && listType === 'modules'} onclick={() => openList('modules')}>{data.graph.stats.modules} modules</button> ·
+          <button class="statbtn" class:on={panel === 'list' && listType === 'files'} onclick={() => openList('files')}>{data.graph.stats.files} files</button>
+        </span>
+      {/if}
+      <button
+        class="icon"
+        class:spin={refreshing}
+        title="Rebuild the graph from the current source — last built {new Date(data.graph.generatedAt).toLocaleString()}"
+        aria-label="Rebuild graph"
+        onclick={refresh}
+        disabled={refreshing}><span class="ico">↻</span></button>
+      <button class="icon" class:on={panel === 'insights' && asideOpen} title="Insights" aria-label="Insights" onclick={toggleInsights}>⚑</button>
     {/if}
-  </div>
-</header>
+    <div class="menu" onfocusout={onMenuBlur}>
+      <button class="icon" class:on={menuOpen} title="More" aria-label="More options" onclick={() => (menuOpen = !menuOpen)}>⋯</button>
+      {#if menuOpen}
+        <div class="menupop">
+          <div class="mlabel">Labels</div>
+          <button class="mitem" class:on={plain} onclick={() => plainLabels.set(!plain)}>plain-English descriptions</button>
+          <button class="mitem" class:on={cov} onclick={() => coverage.set(!cov)}>test-coverage colours</button>
+          {#if mode !== 'layered'}
+            <button class="mitem" class:on={names} onclick={() => allLabels.set(!names)}>all node names</button>
+          {/if}
+          {#if data.current}
+            <div class="mlabel">Export</div>
+            <a class="mitem" href="/export?project={encodeURIComponent(data.current)}" title="Download a self-contained offline HTML snapshot">⇩ offline HTML snapshot</a>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </span>
+</div>
 
 <div class="work">
   <main>
@@ -182,19 +238,184 @@
 </div>
 
 <style>
-  header {
+  .sw-brand {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  /* Single top bar (matches the dashboard's .topbar). */
+  .topbar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-bottom: 1px solid var(--border);
+    gap: 10px;
+    padding: 8px 18px;
     background: var(--bg-panel);
-    height: 36px;
+    border-bottom: 1px solid var(--border);
+  }
+  /* Connection pill — machines with live online/cached status (ported from the
+     dashboard). The pill shows the active machine + N/total online; hovering
+     reveals the switcher, one clickable row per machine. */
+  .conn {
+    position: relative;
+    display: inline-flex;
+  }
+  .conn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 11px;
+  }
+  .conn:hover .conn-pill {
+    border-color: var(--fg-dim);
+  }
+  .conn-active {
+    font-weight: 600;
+  }
+  .conn-sep {
+    color: var(--fg-dim);
+  }
+  .conn-view {
+    color: var(--accent);
+  }
+  .conn-count {
+    color: var(--fg-dim);
+    font-size: 11px;
+    margin-left: 2px;
+  }
+  .caret {
+    color: var(--fg-dim);
+    font-size: 9px;
+  }
+  /* invisible hover bridge so the popup doesn't close in the gap */
+  .conn::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 8px;
+  }
+  .conn-pop {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 0;
+    z-index: 30;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px;
+    min-width: 200px;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  .conn:hover .conn-pop {
+    display: block;
+  }
+  /* one group per machine: a status header + its nested views (all + projects) */
+  .conn-group + .conn-group {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+  .conn-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: 0;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    cursor: pointer;
+    text-align: left;
+  }
+  .conn-head:hover {
+    background: var(--bg-panel);
+  }
+  .conn-name {
+    flex: 1;
+    font-weight: 600;
+  }
+  .conn-stat {
+    color: var(--fg-dim);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .conn-head.active .conn-name {
+    color: var(--accent);
+  }
+  /* nested views under a machine */
+  .conn-items {
+    display: flex;
+    flex-direction: column;
+    margin-left: 16px;
+    border-left: 1px solid var(--border);
+    padding-left: 4px;
+  }
+  .conn-item {
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--fg-dim);
+    cursor: pointer;
+  }
+  .conn-item:hover {
+    background: var(--bg-panel);
+    color: var(--fg);
+  }
+  .conn-item.active {
+    color: var(--accent);
+  }
+  /* status dots */
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .dot.ok {
+    background: #57d9a3;
+  }
+  .dot.stale {
+    background: #e3b341;
+  }
+  .dot.off {
+    background: var(--fg-dim);
+  }
+  .topbar-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .vsep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 3px;
   }
   /* Same-sized view-mode buttons. */
   .seg {
-    min-width: 78px;
+    min-width: 74px;
     text-align: center;
+  }
+  .stale {
+    color: #ff8a5c;
   }
   /* Square icon buttons (Insights, overflow menu). */
   .icon {
@@ -232,16 +453,6 @@
     to {
       transform: rotate(360deg);
     }
-  }
-  header strong {
-    color: var(--accent);
-    letter-spacing: 1px;
-  }
-  .sep {
-    color: var(--fg-dim);
-  }
-  .grow {
-    flex: 1;
   }
   /* Stat shortcuts (fns / calls / modules / files) — link-like, never filled. */
   .stats {
@@ -288,9 +499,6 @@
     color: var(--fg-dim);
     padding: 6px 7px 2px;
   }
-  .menupop select {
-    width: 100%;
-  }
   .mitem {
     width: 100%;
     text-align: left;
@@ -312,7 +520,8 @@
   }
   .work {
     position: relative;
-    height: calc(100vh - 36px);
+    flex: 1;
+    min-height: 0;
   }
   main {
     position: absolute;
