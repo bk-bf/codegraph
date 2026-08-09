@@ -46,6 +46,25 @@ pnpm dev        # SvelteKit viewer on http://localhost:5185
 The viewer reads `data/<project>.json`. Toggle between the **layered module view**
 and the **force-directed function view** (graphology + sigma).
 
+## Run it as a service
+
+To keep the viewer up without a terminal, install the systemd `--user` unit. The
+template in `deploy/` carries placeholders; `install.sh` fills in this checkout's
+path, the `node` on your `PATH`, the port, and the project to build on first
+start — so a clone in any directory works.
+
+```bash
+./install.sh --with-units                  # write the unit, start nothing
+./install.sh --enable-units                # …and enable --now it
+./install.sh --port 6000 --project laptop  # non-default port / first graph
+./install.sh --uninstall                   # remove it again
+```
+
+Nothing is enabled or started unless you ask, and a machine without systemd is a
+no-op rather than an error. The unit runs in `background.slice` at `Nice=10`, so
+an on-demand rebuild yields to whatever you are profiling. Add
+`loginctl enable-linger $USER` if it should survive logout.
+
 ## Layout
 
 | Path | Role |
