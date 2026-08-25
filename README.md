@@ -40,7 +40,7 @@ A project is any directory with a `codegraph.config.json` at its root:
   "tsconfig": "tsconfig.json",
   "srcDir": "src/lib",          // only .ts under here are graph sources
   "svelteRoot": "src",          // scanned for .svelte
-  "rustCrates": ["spatial-core"],
+  "rustCrates": ["spatial-core"],   // a crate under the root that is missing here is warned about
   "adrsDoc": ".docs/game/DECISIONS.md",
   "descriptions": "codegraph.descriptions.json",
   "group": { "namespacePrefix": "game" },  // game/services/Foo -> group "services"
@@ -62,6 +62,8 @@ node bin/codegraph.mjs extract                  # rebuild all registered project
 
 ```bash
 pnpm dev        # SvelteKit viewer on http://localhost:5185
+pnpm test       # extractor, query API and architecture checks, over test/fixtures
+pnpm check      # svelte-check
 ```
 
 The viewer reads `data/<project>.json`. It is force-directed (graphology + sigma);
@@ -98,6 +100,7 @@ an on-demand rebuild yields to whatever you are profiling. Add
 | `src/routes/` | SvelteKit viewer + (soon) `/api` endpoints |
 | `bin/codegraph.mjs` | CLI: onboard / list / extract / check / diff |
 | `data/` | generated `<project>.json` graphs (gitignored) |
+| `test/` | vitest suite + `fixtures/tsproj`, a project small enough to assert node by node |
 | `projects.json` | registered project name → path |
 
 ## Status
@@ -108,5 +111,6 @@ graph. In progress: graphology-based checks, detail/insights
 panels, `/api` endpoints, static-HTML export.
 
 **Before relying on its output, read [RELIABILITY.md](RELIABILITY.md)** — what is
-verified, what is known-weak, and what is only assumed. There is no test suite, and 18%
-of the graph does not currently reach a consumer.
+verified, what is known-weak, and what is only assumed. The short version: `pnpm test`
+covers the extractor against a fixture project, nothing covers the viewer, and `tested`
+means "a test file calls this" rather than "a test covers this".

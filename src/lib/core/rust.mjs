@@ -55,13 +55,47 @@ const humanize = (name) =>
  * @param {(f:string)=>string} rel  ROOT-relative path helper
  * @returns {{nodes:any[], edges:{from:string,to:string}[], exports:Map<string,string>}}
  */
+/** Crate directories under ROOT (one level deep) that hold a Cargo.toml and a src/. */
+function findCrates(ROOT) {
+  const out = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(ROOT, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules' || e.name === 'target')
+      continue;
+    const dir = path.join(ROOT, e.name);
+    if (fs.existsSync(path.join(dir, 'Cargo.toml')) && fs.existsSync(path.join(dir, 'src')))
+      out.push(e.name);
+  }
+  return out;
+}
+
 export function extractRust(ROOT, rel, crates = []) {
+  const named = new Set(crates.map((c) => path.resolve(ROOT, c)));
+  const missing = crates.filter((c) => !fs.existsSync(path.join(path.resolve(ROOT, c), 'src')));
+  for (const c of missing)
+    console.error(`WARNING: rustCrates lists "${c}", which has no src/ under the project root.`);
+  // A crate absent from rustCrates is absent from the graph, and nothing downstream can tell
+  // that from a crate with no functions. Name it instead.
+  const unlisted = findCrates(ROOT).filter((c) => !named.has(path.resolve(ROOT, c)));
+  if (unlisted.length)
+    console.error(
+      `WARNING: ${unlisted.map((c) => `"${c}"`).join(', ')} ${unlisted.length === 1 ? 'is a crate' : 'are crates'} under the project root but not in\n` +
+        `         "rustCrates", so ${unlisted.length === 1 ? 'its' : 'their'} functions are not in the graph.\n` +
+        `         Add ${unlisted.length === 1 ? 'it' : 'them'} if the graph should cover ${unlisted.length === 1 ? 'it' : 'them'}.`
+    );
   const crateRoots = crates
     .map((c) => path.resolve(ROOT, c))
     .filter((d) => fs.existsSync(path.join(d, 'src')));
   const nodes = [];
   const edges = [];
   const exports = new Map();
+  /** @type {Set<string>} node ids a `#[cfg(test)]` function calls */
+  const tested = new Set();
 
   for (const crateDir of crateRoots) {
     const crate = path.basename(crateDir);
@@ -91,8 +125,21 @@ export function extractRust(ROOT, rel, crates = []) {
         return best ? best.type : null;
       };
 
+      // `#[cfg(test)]` blocks are the crate's own tests. The TypeScript side keeps test
+      // files out of the graph and uses them only to mark what they call; do the same here,
+      // or a crate's unit tests read as ordinary functions with no callers.
+      const testSpans = [];
+      const cfgTestRe = /#\[\s*cfg\s*\(\s*test\s*\)\s*\]/g;
+      let ct;
+      while ((ct = cfgTestRe.exec(src))) {
+        const brace = src.indexOf('{', ct.index);
+        if (brace >= 0) testSpans.push([brace, matchBrace(src, brace)]);
+      }
+      const inTest = (idx) => testSpans.some(([a, b]) => idx > a && idx < b);
+
       // function / method definitions
       const fns = [];
+      const testFns = [];
       const fnRe = /\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\(/g;
       let m;
       while ((m = fnRe.exec(src))) {
@@ -113,7 +160,9 @@ export function extractRust(ROOT, rel, crates = []) {
           /\bpub\b/.test(src.slice(lineStart(src, m.index), m.index));
         const wasm = /#\[\s*wasm_bindgen/.test(src.slice(Math.max(0, m.index - 200), m.index));
         const sig = src.slice(m.index, bodyOpen).replace(/\s+/g, ' ').trim();
-        fns.push({ name, cls, startLine, bodyStart: bodyOpen, bodyEnd, isPub, wasm, sig });
+        const f = { name, cls, startLine, bodyStart: bodyOpen, bodyEnd, isPub, wasm, sig };
+        if (inTest(m.index)) testFns.push(f);
+        else fns.push(f);
       }
 
       const localNames = new Set(fns.map((f) => f.name));
@@ -125,7 +174,8 @@ export function extractRust(ROOT, rel, crates = []) {
         const id = idOf(f);
         nodes.push({
           id, name: short, short, file: relFile, module: moduleName, group: 'rust',
-          line: f.startLine, kind: f.cls ? 'method' : 'function', className: f.cls || null,
+          line: f.startLine, endLine: lineAt(src, f.bodyEnd), kind: f.cls ? 'method' : 'function',
+          className: f.cls || null,
           exported: f.isPub, lang: 'rust', wasmExport: f.wasm,
           signature: f.sig.slice(0, 160),
           doc,
@@ -134,24 +184,33 @@ export function extractRust(ROOT, rel, crates = []) {
           loc: lineAt(src, f.bodyEnd) - f.startLine + 1,
           chars: f.bodyEnd - f.bodyStart,
           numeric: 0,
+          nested: false,
+          parent: null,
           tested: false,
+          testDepth: null,
         });
         if (f.wasm) exports.set(f.name, id);
       }
 
       // intra-crate edges: scan each body for calls to local fn/method names
+      const calls = (body, g) => new RegExp(`(?:\\.|\\b)${g.name}\\s*\\(`).test(body);
       for (const f of fns) {
         const body = src.slice(f.bodyStart, f.bodyEnd);
         const fromId = idOf(f);
         for (const g of fns) {
           if (g === f) continue;
           // `name(` for free fns, `.name(` for methods
-          const re = new RegExp(`(?:\\.|\\b)${g.name}\\s*\\(`);
-          if (re.test(body)) edges.push({ from: fromId, to: idOf(g) });
+          if (calls(body, g)) edges.push({ from: fromId, to: idOf(g) });
         }
+      }
+      // What the crate's own tests call, so a Rust fn under test is marked like a TS one.
+      for (const t of testFns) {
+        const body = src.slice(t.bodyStart, t.bodyEnd);
+        for (const g of fns) if (calls(body, g)) tested.add(idOf(g));
       }
     }
   }
+  for (const n of nodes) if (tested.has(n.id)) n.tested = true;
   return { nodes, edges, exports };
 }
 

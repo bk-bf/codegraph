@@ -64,7 +64,8 @@ export function createApi(G: RawGraph) {
     const d = describe(n);
     return {
       id: n.id, name: n.short, module: shortMod(n.module), group: n.group, kind: n.kind,
-      exported: n.exported, tested: !!n.tested, file: n.file, line: n.line,
+      exported: n.exported, tested: !!n.tested, testDepth: n.testDepth ?? null,
+      file: n.file, line: n.line,
       loc: n.loc, chars: n.chars, numeric: n.numeric,
       description: d.text, descriptionSource: d.source, inDegree: n.inDegree, outDegree: n.outDegree
     };
@@ -108,7 +109,8 @@ export function createApi(G: RawGraph) {
     endpoints: {
       'GET /api/stats': 'counts', 'GET /api/graph': 'full graph',
       'GET /api/modules': 'module summaries', 'GET /api/module?name=': 'one module',
-      'GET /api/functions?module=&group=&q=&kind=&exported=&tested=&sort=&limit=': 'list/filter functions',
+      'GET /api/functions?module=&group=&q=&kind=&exported=&tested=&testReachable=&maxTestDepth=&sort=&limit=':
+        'list/filter functions (tested = called from a test; testDepth = hops to the nearest one)',
       'GET /api/function?name=|id=': 'one function (callers/callees)',
       'GET /api/callers?name=': 'callers', 'GET /api/callees?name=': 'callees',
       'GET /api/search?q=': 'search', 'GET /api/path?from=&to=': 'shortest call path',
@@ -168,6 +170,16 @@ export function createApi(G: RawGraph) {
         if (exp != null) list = list.filter((n) => String(n.exported) === exp);
         const tst = qp.get('tested');
         if (tst != null) list = list.filter((n) => String(!!n.tested) === tst);
+        // `tested` alone answers "does a test call this", which reads as untested for
+        // everything a suite reaches through a harness. maxTestDepth asks the question a
+        // consumer usually means: is any test within N hops of this?
+        const depth = qp.get('maxTestDepth');
+        if (depth != null) {
+          const max = num(depth, 0);
+          list = list.filter((n) => n.testDepth != null && n.testDepth <= max);
+        }
+        if (qp.get('testReachable') != null)
+          list = list.filter((n) => (n.testDepth != null) === (qp.get('testReachable') === 'true'));
         const sort = qp.get('sort') ?? 'indegree';
         const conn = (n: GraphNode) => (n.inDegree || 0) + (n.outDegree || 0);
         const cmp: Record<string, (a: GraphNode, b: GraphNode) => number> = {

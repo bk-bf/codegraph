@@ -40,26 +40,75 @@ function headOf(project: string): string | null {
   }
 }
 
+/** Paths git reports as modified, added, renamed or untracked, relative to the checkout. */
+function changedPaths(cwd: string): string[] {
+  try {
+    const out = execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf8', timeout: 4000 });
+    return out
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => l.slice(3).trim())
+      .map((p) => (p.includes(' -> ') ? p.slice(p.indexOf(' -> ') + 4) : p))
+      .map((p) => p.replace(/^"|"$/g, ''));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Whether the stored graph describes a different revision than the checkout is on.
  * Unknown (no git, no stamp, a filesystem project) counts as fresh — a graph that cannot
  * be checked must not rebuild on every single page load.
+ *
+ * The commit is not the whole answer: most editing happens before a commit, and while the
+ * tree is dirty HEAD keeps matching, so a commit-only check serves a graph that predates
+ * every uncommitted edit and calls it fresh. Uncommitted source files are therefore checked
+ * by mtime against the moment the graph was built.
  */
 export function isStale(project: string): boolean {
+  const entry = registry().find((p) => p.name === project);
   const head = headOf(project);
-  if (!head) return false;
-  const g = loadGraph(project) as { commit?: string; dirty?: boolean } | null;
+  if (!head || !entry?.path) return false;
+  const g = loadGraph(project) as
+    | { commit?: string; dirty?: boolean; generatedAt?: string; files?: { file: string }[] }
+    | null;
   if (!g || !g.commit) return false;
-  return g.commit !== head;
+  if (g.commit !== head) return true;
+
+  const cwd = path.resolve(process.cwd(), entry.path);
+  const changed = changedPaths(cwd);
+  // Built over edits that have since been reverted: same commit, clean tree, but the graph
+  // describes code that is no longer there.
+  if (g.dirty && changed.length === 0) return true;
+  if (!changed.length || !g.generatedAt) return false;
+
+  const built = Date.parse(g.generatedAt);
+  if (Number.isNaN(built)) return false;
+  const known = new Set((g.files ?? []).map((f) => f.file));
+  // Extensions the graph actually covers, so a changed README never costs a 13 s rebuild.
+  const exts = new Set([...known].map((f) => f.slice(f.lastIndexOf('.'))));
+  for (const p of changed) {
+    if (!known.has(p) && !exts.has(p.slice(p.lastIndexOf('.')))) continue;
+    try {
+      if (fs.statSync(path.join(cwd, p)).mtimeMs > built) return true;
+    } catch {
+      // deleted since the graph was built — the node set is wrong either way
+      return true;
+    }
+  }
+  return false;
 }
 
-// One rebuild at a time, process-wide. Concurrent page loads await the SAME run rather than
-// starting a second extraction over the first one's output.
-let inFlight: Promise<boolean> | null = null;
+// One rebuild at a time PER PROJECT. Concurrent page loads for the same project await the
+// SAME run rather than starting a second extraction over the first one's output; a load for a
+// different project starts its own, because sharing one promise across projects hands the
+// second caller the first project's result and its graph is never rebuilt.
+const inFlight = new Map<string, Promise<boolean>>();
 
 export function runExtract(project: string): Promise<boolean> {
-  if (inFlight) return inFlight;
-  inFlight = new Promise<boolean>((resolve) => {
+  const running = inFlight.get(project);
+  if (running) return running;
+  const p = new Promise<boolean>((resolve) => {
     // process.execPath = the node running this server, so the rebuild works regardless of
     // PATH (e.g. under a systemd unit).
     const child = spawn(process.execPath, ['bin/codegraph.mjs', 'extract', project], {
@@ -69,12 +118,14 @@ export function runExtract(project: string): Promise<boolean> {
     child.on('exit', (c: number | null) => resolve(c === 0));
     child.on('error', () => resolve(false));
   }).finally(() => {
-    inFlight = null;
+    inFlight.delete(project);
   }) as Promise<boolean>;
-  return inFlight;
+  inFlight.set(project, p);
+  return p;
 }
 
-export const rebuilding = () => inFlight !== null;
+export const rebuilding = (project?: string) =>
+  project ? inFlight.has(project) : inFlight.size > 0;
 
 /**
  * Bring a project's graph up to date if it is behind, and report what happened so the page

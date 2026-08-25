@@ -1,0 +1,12 @@
+{
+  "name": "fixture",
+  "tsconfig": "tsconfig.json",
+  "srcDir": "src/lib",
+  "svelteRoot": "src",
+  "rustCrates": ["rustcrate"],
+  "paths": {
+    "$lib": ["src/lib"],
+    "$lib/*": ["src/lib/*"]
+  },
+  "layers": { "core": 0, "services": 2, "stores": 4, "components": 5 }
+}

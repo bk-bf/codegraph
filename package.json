@@ -10,6 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "cg": "node bin/codegraph.mjs",
     "extract": "node bin/codegraph.mjs extract",
     "graph:check": "node bin/codegraph.mjs check",
@@ -38,6 +40,7 @@
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "typescript": "^5.6.0",
-    "vite": "^6.2.6"
+    "vite": "^6.2.6",
+    "vitest": "^4.1.11"
   }
 }

@@ -378,9 +378,22 @@ function bodyMetrics(decl, sf) {
   return { loc: Math.max(1, end - start + 1), chars: decl.getEnd() - decl.getStart(sf), numeric };
 }
 
+/** Nearest ancestor declaration that got its own node, or null at module scope. */
+function enclosingId(decl) {
+  let a = ts.findAncestor(decl.parent, (n) => isFunctionLike(n));
+  while (a) {
+    const id = declToId.get(a);
+    if (id) return id;
+    a = ts.findAncestor(a.parent, (n) => isFunctionLike(n));
+  }
+  return null;
+}
+
 function register(decl, qualName, kind, className, sf) {
   const fileName = sf.fileName;
   const { line } = sf.getLineAndCharacterOfPosition(decl.getStart(sf));
+  const endLine = sf.getLineAndCharacterOfPosition(decl.getEnd()).line + 1;
+  const parent = enclosingId(decl);
   const id = makeId(fileName, qualName, line + 1);
   declToId.set(decl, id);
   const doc = leadingDoc(decl, sf);
@@ -393,6 +406,9 @@ function register(decl, qualName, kind, className, sf) {
     module: moduleOf(fileName),
     group: groupOf(fileName),
     line: line + 1,
+    // Last line of the declaration. A consumer keying on its own symbols (which need not
+    // split nested functions out) can collapse a node onto whichever of its symbols spans it.
+    endLine,
     kind,
     className: className || null,
     exported: isExported(decl),
@@ -409,8 +425,14 @@ function register(decl, qualName, kind, className, sf) {
     // Closure-scoped: declared INSIDE another function (a local helper, an object-literal value in a
     // call argument…). Name collisions across modules are meaningless for these — the duplicate
     // check skips them (a nested `clear`/`logActivity` is not copy-paste of a module-scope one).
-    nested: !!ts.findAncestor(decl.parent, (n) => isFunctionLike(n)),
-    tested: false
+    nested: !!parent || !!ts.findAncestor(decl.parent, (n) => isFunctionLike(n)),
+    // Id of the declaration this one is written inside, so a nested node can be attributed
+    // to its owner without inferring containment from line numbers.
+    parent,
+    tested: false,
+    // Hops from the nearest node a test file calls directly; 0 = called from a test itself,
+    // null = no test reaches it. Filled in after the edges are resolved.
+    testDepth: null
   });
   const body = /** @type {any} */ (decl).body;
   if (body) scanList.push({ id, body, decl });
@@ -566,8 +588,11 @@ function collectNodes(sf) {
 function registerComponent(sf) {
   const fileName = sf.fileName;
   const base = path.basename(realPath(fileName), '.svelte');
-  const id = makeId(fileName, base, 1);
   const txt = sf.getFullText(); // line-preserving twin → same size as the .svelte file
+  // An empty .svelte file declares no component; emitting a node for one inflates the node
+  // count with something no consumer can match to anything.
+  if (!txt.trim()) return;
+  const id = makeId(fileName, base, 1);
   nodes.set(id, {
     id,
     name: base,
@@ -576,6 +601,7 @@ function registerComponent(sf) {
     module: moduleOf(fileName),
     group: groupOf(fileName),
     line: 1,
+    endLine: txt.split('\n').length,
     kind: 'component',
     className: null,
     exported: true,
@@ -586,7 +612,10 @@ function registerComponent(sf) {
     loc: txt.split('\n').length,
     chars: txt.length,
     numeric: 0,
+    nested: false,
+    parent: null,
     tested: false,
+    testDepth: null,
     // Svelte 5 best practice: prefer runes. Count legacy `$:` reactive statements.
     legacyReactive: (txt.match(/(^|\n)[ \t]*\$:/g) || []).length
   });
@@ -647,7 +676,7 @@ function resolveTargetId(symbol) {
 
 function addEdge(from, to) {
   if (!from || !to || from === to) return;
-  const key = `${from} ${to}`;
+  const key = `${from}\u0000${to}`;
   const e = edges.get(key);
   if (e) e.count++;
   else edges.set(key, { from, to, count: 1 });
@@ -887,7 +916,14 @@ function componentStoreReads(sf, ownerId) {
     }
   }
   if (!local.size) return;
-  const text = sf.getFullText();
+  // The virtual twin blanks everything outside <script>, so a `$store` read in the MARKUP —
+  // where most of them are — is invisible in it. Match against the real component file.
+  let text = sf.getFullText();
+  try {
+    text = fs.readFileSync(realPath(sf.fileName), 'utf8');
+  } catch {
+    /* unreadable — the twin still covers reads in the script */
+  }
   const re = /\$([A-Za-z_]\w*)/g;
   let m;
   while ((m = re.exec(text))) {
@@ -920,6 +956,32 @@ function markTested(sf) {
   ts.forEachChild(sf, visit);
 }
 for (const sf of testFiles) markTested(sf);
+
+// `tested` is exact but narrow: it means "a test file calls this", not "a test covers this".
+// A suite driven through a harness (a scenario builder, a headless session) reaches most of
+// its subject one or more hops deeper, and every one of those reads as untested. testDepth
+// is that distance over the resolved call edges, so a consumer can ask the question it
+// actually means: 0 = called from a test, n = reached in n hops, null = no test reaches it.
+{
+  const adj = new Map();
+  for (const e of edges.values()) {
+    if (!adj.has(e.from)) adj.set(e.from, []);
+    adj.get(e.from).push(e.to);
+  }
+  let frontier = [];
+  for (const n of nodes.values()) if (n.tested) { n.testDepth = 0; frontier.push(n.id); }
+  for (let d = 1; frontier.length; d++) {
+    const next = [];
+    for (const id of frontier)
+      for (const to of adj.get(id) ?? []) {
+        const n = nodes.get(to);
+        if (!n || n.testDepth !== null) continue;
+        n.testDepth = d;
+        next.push(to);
+      }
+    frontier = next;
+  }
+}
 console.error(`Resolved ${edges.size} edges (${testFiles.length} test files scanned).`);
 
 // ---------------------------------------------------------------------------
@@ -930,7 +992,7 @@ for (const e of edges.values()) {
   const fromMod = nodes.get(e.from).module;
   const toMod = nodes.get(e.to).module;
   if (fromMod === toMod) continue;
-  const key = `${fromMod} ${toMod}`;
+  const key = `${fromMod}\u0000${toMod}`;
   const me = moduleEdges.get(key);
   if (me) me.count += e.count;
   else moduleEdges.set(key, { from: fromMod, to: toMod, count: e.count });

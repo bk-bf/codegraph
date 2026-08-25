@@ -7,6 +7,8 @@ export interface GraphNode {
   module: string;
   group: string;
   line: number;
+  /** Last line of the declaration; with `line`, the span a consumer can key its own symbols to. */
+  endLine: number;
   kind: string;
   className: string | null;
   exported: boolean;
@@ -17,7 +19,10 @@ export interface GraphNode {
   loc: number;
   chars: number;
   numeric: number;
+  /** A test file calls this directly. Narrower than covered — see testDepth. */
   tested: boolean;
+  /** Hops to the nearest directly-tested node; 0 = tested, null = no test reaches it. */
+  testDepth: number | null;
   inDegree: number;
   outDegree: number;
   legacyReactive?: number;
@@ -25,6 +30,8 @@ export interface GraphNode {
   moduleUsed?: boolean;
   /** Declared inside another function — a closure-scoped local. */
   nested?: boolean;
+  /** Id of the declaration this one is written inside, or null at module scope. */
+  parent?: string | null;
 }
 export interface GraphEdge {
   from: string;
