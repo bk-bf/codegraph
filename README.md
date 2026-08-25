@@ -106,3 +106,7 @@ Migrated from a self-contained vanilla-HTML tool. Done: standalone repo,
 config-driven extractor (byte-parity with the original), SvelteKit + sigma force
 graph. In progress: graphology-based checks, detail/insights
 panels, `/api` endpoints, static-HTML export.
+
+**Before relying on its output, read [RELIABILITY.md](RELIABILITY.md)** — what is
+verified, what is known-weak, and what is only assumed. There is no test suite, and 18%
+of the graph does not currently reach a consumer.
