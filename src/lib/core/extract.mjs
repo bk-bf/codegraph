@@ -15,6 +15,7 @@ import ts from 'typescript';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { extractRust } from './rust.mjs';
 import { loadConfig } from './config.mjs';
@@ -153,6 +154,23 @@ const checker = program.getTypeChecker();
 // Helpers
 // ---------------------------------------------------------------------------
 const rel = (f) => path.relative(ROOT, realPath(f)).replace(/\\/g, '/');
+
+/** HEAD of the analysed project, or null when it is not a git checkout. */
+function gitHead() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+}
+/** True when tracked files differ from HEAD, so the graph matches no commit. */
+function gitDirty() {
+  try {
+    return execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' }).trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /** Module label e.g. "game/services/JobService" or "components/screens/WorkScreen". */
 function moduleOf(fileName) {
@@ -985,6 +1003,11 @@ const out = {
   // stops the viewer having to be told, and stops a registry copied between machines
   // from claiming the code lives somewhere it does not.
   host: os.hostname(),
+  // Which revision it was built FROM. A consumer can then tell a stale graph from a current
+  // one exactly, instead of inferring it from a low match rate after the damage is done.
+  // `dirty` because a graph built over uncommitted edits matches no commit at all.
+  commit: gitHead(),
+  dirty: gitDirty(),
   root: ROOT,
   descriptions,
   // Analysis knobs embedded so analysis.mjs is self-describing (no separate config plumbing).
