@@ -176,8 +176,11 @@
       <button
         class="icon"
         class:spin={refreshing}
-        title="Rebuild the graph from the current source — last built {new Date(data.graph.generatedAt).toLocaleString()}"
-        aria-label="Rebuild graph"
+        class:stale={data.stale}
+        title={data.stale
+          ? `This graph describes an older revision and the rebuild did not succeed — built ${new Date(data.graph.generatedAt).toLocaleString()}`
+          : `Rebuild the graph from the current source — ${data.rebuilt ? 'rebuilt just now' : `last built ${new Date(data.graph.generatedAt).toLocaleString()}`}`}
+        aria-label={data.stale ? 'Graph is stale — rebuild' : 'Rebuild graph'}
         onclick={refresh}
         disabled={refreshing}><span class="ico">↻</span></button>
       <button class="icon" class:on={panel === 'insights' && asideOpen} title="Insights" aria-label="Insights" onclick={toggleInsights}>⚑</button>
@@ -413,6 +416,12 @@
   /* Active state: a yellow outline + text rather than a heavy filled highlight,
      so an active button doesn't read as "thicker" than the others. */
   .seg.on,
+  /* A graph that describes other code is worth more than a tooltip: the whole page is then
+     answering about a revision that is not checked out. */
+  .icon.stale {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
   .icon.on {
     background: var(--bg);
     border-color: var(--accent);
