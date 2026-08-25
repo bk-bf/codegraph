@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { execSync } from 'node:child_process';
 import type { RawGraph } from '$lib/graph/types';
 
@@ -64,12 +65,25 @@ export function listMachines(): MachineNav[] {
     /* no registry — everything falls back below */
   }
   const meta = new Map(reg.map((p) => [p.name, p]));
+
+  // A hostname is what a machine calls itself; the registry may know it by a friendlier
+  // name through the tsHost of its filesystem entry (cachyos-x8664 → laptop). Resolve to
+  // that label when one exists so the same machine is never listed twice under two names.
+  const label = (host: string) =>
+    reg.find((p) => p.tsHost === host || p.machine === host)?.machine ?? host;
   const byMachine = new Map<string, MachineNav>();
   const tsHostOf = new Map<string, string>(); // machine → tailscale host (from its fs entry)
   for (const name of avail) {
     const m = meta.get(name);
-    const machine = m?.machine ?? name; // orphan graph → its own machine
     const isFs = m?.kind === 'filesystem';
+    // A filesystem graph is ABOUT a machine, so the registry names which one. A code
+    // graph is extracted from a local path, so it belongs to whichever machine built
+    // it — read from the graph, or this host when the graph predates the stamp. Taking
+    // it from the registry instead is what made a checkout on the server report itself
+    // as being on the laptop.
+    const machine = isFs
+      ? (m?.machine ?? name)
+      : label((loadGraph(name) as { host?: string } | null)?.host ?? os.hostname());
     let node = byMachine.get(machine);
     if (!node) {
       node = { name: machine, all: null, projects: [], tsHost: null, status: 'cached', indexedAt: null };
@@ -83,10 +97,15 @@ export function listMachines(): MachineNav[] {
     if (m?.tsHost) tsHostOf.set(machine, m.tsHost);
   }
   const online = onlineHosts();
+  const here = label(os.hostname());
   for (const node of byMachine.values()) {
     node.tsHost = tsHostOf.get(node.name) ?? null;
-    // online only when tailscale confirms reachability; otherwise it's a cached index.
-    if (online && node.tsHost) node.status = online.has(node.tsHost) ? 'online' : 'cached';
+    // The machine serving this page is reachable by definition — it does not need
+    // tailscale's opinion, and asking for one marks it offline whenever it has no
+    // filesystem entry to carry a tsHost.
+    if (node.name === here) node.status = 'online';
+    // Otherwise online only when tailscale confirms reachability; else a cached index.
+    else if (online && node.tsHost) node.status = online.has(node.tsHost) ? 'online' : 'cached';
     else node.status = node.all ? 'cached' : 'offline';
   }
   return [...byMachine.values()].sort((a, b) => a.name.localeCompare(b.name));

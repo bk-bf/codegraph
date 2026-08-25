@@ -4,7 +4,9 @@
   import { hiddenGroups } from '$lib/graph/stores';
 
   let { graph }: { graph: RawGraph } = $props();
-  let open = $state(true);
+  // Collapsed by default: it overlays the graph's bottom-right corner, and on a
+  // phone an expanded census covers a good part of the stage before anything is read.
+  let open = $state(false);
   let hidden = $state<Set<string>>(new Set());
   hiddenGroups.subscribe((v) => (hidden = v));
 

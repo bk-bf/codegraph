@@ -14,6 +14,7 @@
 import ts from 'typescript';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { extractRust } from './rust.mjs';
 import { loadConfig } from './config.mjs';
@@ -979,6 +980,11 @@ if (CFG.descriptionsPath) {
 const out = {
   generatedAt: new Date().toISOString(),
   project: CFG.name,
+  // Where this graph was built. A code project is extracted from a local path, so the
+  // host doing the extracting IS the machine the code is on — recording it here is what
+  // stops the viewer having to be told, and stops a registry copied between machines
+  // from claiming the code lives somewhere it does not.
+  host: os.hostname(),
   root: ROOT,
   descriptions,
   // Analysis knobs embedded so analysis.mjs is self-describing (no separate config plumbing).

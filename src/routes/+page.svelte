@@ -297,7 +297,8 @@
     display: none;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
-  .conn:hover .conn-pop {
+  .conn:hover .conn-pop,
+  .conn:focus-within .conn-pop {
     display: block;
   }
   /* one group per machine: a status header + its nested views (all + projects) */
@@ -546,6 +547,57 @@
   .aside-close:hover {
     color: var(--accent2);
   }
+  /* ── narrow screens ──────────────────────────────────────────────────────
+     One bar of controls sized for a desktop is wider than a phone, so it
+     overflowed sideways and pushed the search and the menu off the screen.
+     Everything here either wraps, shrinks, or goes away; nothing is hidden that
+     cannot be reached another way. */
+  @media (max-width: 720px) {
+    .topbar {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 7px 10px;
+    }
+    /* The census is four buttons of numbers, and the same counts open from the
+       lists panel — the first thing that can go. */
+    .stats {
+      display: none;
+    }
+    .vsep {
+      display: none;
+    }
+    /* Fixed 74px each plus the brand and the pill is already past the width of a
+       phone; let the pair share whatever the row has left. */
+    .seg {
+      min-width: 0;
+      flex: 1 1 0;
+    }
+    /* The search takes the next row rather than being squeezed to nothing. */
+    .topbar :global(.search) {
+      flex: 1 0 100%;
+      max-width: none;
+    }
+    .topbar-meta {
+      margin-left: auto;
+    }
+    /* 340px of panel over a 390px screen leaves a strip of graph too narrow to
+       read, which looks like a layout fault rather than a choice. Full width is
+       the same panel, honestly sized. */
+    aside {
+      width: 100%;
+      border-left: 0;
+    }
+    .conn-pop {
+      min-width: 0;
+      width: min(80vw, 280px);
+    }
+    /* A finger is not a cursor: the icon row is the smallest thing in the bar. */
+    .icon {
+      width: 34px;
+      height: 34px;
+    }
+  }
+
   .empty {
     padding: 40px;
     color: var(--fg-dim);
