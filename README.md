@@ -9,6 +9,27 @@ Unlike file/dependency visualizers, the differentiator is the **architecture
 contract**: each onboarded project declares its layers and ADR rules, and the
 checker fails when the code violates them.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bk-bf/codegraph/master/install.sh | bash
+```
+
+Clones to `~/Projects/codegraph`, checks `node` (>= 20), gets `pnpm` through
+`corepack` if it is missing, installs the dependencies, and runs `svelte-kit sync` so
+the tsconfig this repo extends exists. Run it again inside an existing checkout to
+re-resolve dependencies; it clones only when it cannot find one.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bk-bf/codegraph/master/install.sh | bash -s -- --enable-units
+CODEGRAPH_DIR=~/src/codegraph ./install.sh   # clone somewhere else
+./install.sh --no-deps --with-units          # unit only, dependencies already there
+./install.sh --help
+```
+
+Cloning defaults to SSH; set `CODEGRAPH_REPO=https://github.com/bk-bf/codegraph.git`
+for HTTPS.
+
 ## Onboard a project
 
 A project is any directory with a `codegraph.config.json` at its root:
@@ -52,6 +73,9 @@ To keep the viewer up without a terminal, install the systemd `--user` unit. The
 template in `deploy/` carries placeholders; `install.sh` fills in this checkout's
 path, the `node` on your `PATH`, the port, and the project to build on first
 start — so a clone in any directory works.
+
+`--bind` and `--proxied-host` are for putting it behind a reverse proxy: Vite binds
+localhost and rejects a `Host` header it does not know, so both have to be named.
 
 ```bash
 ./install.sh --with-units                  # write the unit, start nothing
