@@ -7,6 +7,7 @@ After=network.target
 Type=simple
 WorkingDirectory=@REPO@
 Environment=CI=true
+@ENVLINES@
 # Low priority so it always yields CPU to whatever you're profiling. The viewer
 # is idle most of the time; this only matters during an on-demand rebuild.
 Nice=10
@@ -15,7 +16,7 @@ CPUWeight=30
 # don't fail startup if it errors). Otherwise the graph is rebuilt only on demand
 # via the viewer's header refresh button — there is no file watcher.
 ExecStartPre=-/bin/sh -c 'test -f data/@PROJECT@.json || @NODE@ bin/codegraph.mjs extract @PROJECT@'
-ExecStart=@NODE@ node_modules/vite/bin/vite.js dev --port @PORT@ --strictPort
+ExecStart=@NODE@ node_modules/vite/bin/vite.js dev --port @PORT@ --strictPort@BINDARG@
 Restart=on-failure
 RestartSec=3
 # A plain SIGTERM is how systemd itself stops this, and how anything sweeping up stray `vite dev`
