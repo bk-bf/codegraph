@@ -3,7 +3,7 @@
   import type { GraphIndex } from '$lib/graph/indexes';
   import { describer } from '$lib/graph/describe';
   import { groupColor } from '$lib/graph/colors';
-  import { selection, focusModule, viewMode, forceFocus, type Selection } from '$lib/graph/stores';
+  import { selection, viewMode, forceFocus, type Selection } from '$lib/graph/stores';
 
   let { graph, index }: { graph: RawGraph; index: GraphIndex } = $props();
   const { shortMod, fnDesc, modDesc, vscodeUrl } = describer(graph);
@@ -19,11 +19,6 @@
   }
   function selModule(m: string) {
     selection.set({ type: 'module', module: m });
-  }
-  function openInGraph(m: string) {
-    focusModule.set(m);
-    viewMode.set('layered');
-    selModule(m);
   }
   function openInForce(m: string) {
     forceFocus.set(m);
@@ -46,7 +41,7 @@
     <div class="row">
       <div class="lbl">Location</div>
       <a href={vscodeUrl(n)}>{n.file}:{n.line}</a> ·
-      <button class="link" onclick={() => openInGraph(n.module)}>module graph</button>
+      <button class="link" onclick={() => openInForce(n.module)}>module graph</button>
     </div>
     <div class="row">
       <div class="lbl">Calls ({callees.length})</div>
@@ -82,7 +77,6 @@
     <div class="row"><div class="desc">{modDesc(m)}</div></div>
     <div class="row"><div class="lbl">File</div><a href={vscodeUrl({ file: m.file, line: 1 })}>{m.file}</a></div>
     <div class="row open-row">
-      <button class="link" onclick={() => openInGraph(m.module)}>▸ open {fns.length} functions (layered)</button>
       <button class="link bubble" onclick={() => openInForce(m.module)} title="Open this module's functions as bubbles in the force view">⦿ functions</button>
     </div>
     <div class="row">

@@ -17,7 +17,7 @@ const COV = { good: '#7ee787', mid: '#f5a623', bad: '#ff6b6b' };
  * Build a laid-out graphology graph from extractor output.
  *
  * `level: 'function'` → one node per function/method (the Obsidian-style hairball).
- * `level: 'module'`   → one node per module, edges aggregated (the layered overview).
+ * `level: 'module'`   → one node per module, edges aggregated (the overview).
  */
 export function buildGraph(data: RawGraph, level: 'function' | 'module' = 'function', opts: BuildOpts = {}): Graph {
   const g = new Graph({ type: 'directed', multi: false, allowSelfLoops: false });

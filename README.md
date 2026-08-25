@@ -43,8 +43,8 @@ node bin/codegraph.mjs extract                  # rebuild all registered project
 pnpm dev        # SvelteKit viewer on http://localhost:5185
 ```
 
-The viewer reads `data/<project>.json`. Toggle between the **layered module view**
-and the **force-directed function view** (graphology + sigma).
+The viewer reads `data/<project>.json`. It is force-directed (graphology + sigma);
+toggle between the **module view** and the **function view**.
 
 ## Run it as a service
 
@@ -80,5 +80,5 @@ an on-demand rebuild yields to whatever you are profiling. Add
 
 Migrated from a self-contained vanilla-HTML tool. Done: standalone repo,
 config-driven extractor (byte-parity with the original), SvelteKit + sigma force
-graph. In progress: graphology-based checks, Mermaid layered view, detail/insights
+graph. In progress: graphology-based checks, detail/insights
 panels, `/api` endpoints, static-HTML export.

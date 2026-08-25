@@ -23,7 +23,6 @@
     "graphology-dag": "^0.4.1",
     "graphology-layout-forceatlas2": "^0.10.1",
     "graphology-metrics": "^2.3.1",
-    "mermaid": "10.9.1",
     "sigma": "^3.0.0"
   },
   "pnpm": {

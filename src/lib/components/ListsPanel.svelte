@@ -2,7 +2,7 @@
   import type { RawGraph, GraphNode } from '$lib/graph/types';
   import type { GraphIndex } from '$lib/graph/indexes';
   import { describer } from '$lib/graph/describe';
-  import { selection, focusModule, viewMode, type ListType } from '$lib/graph/stores';
+  import { selection, viewMode, forceFocus, type ListType } from '$lib/graph/stores';
 
   let { graph, index, type }: { graph: RawGraph; index: GraphIndex; type: ListType } = $props();
   const { shortMod } = describer(graph);
@@ -41,8 +41,8 @@
     selection.set({ type: 'node', id });
   }
   function selModule(m: string) {
-    focusModule.set(null);
-    viewMode.set('layered');
+    forceFocus.set(null);
+    viewMode.set('modules');
     selection.set({ type: 'module', module: m });
   }
 

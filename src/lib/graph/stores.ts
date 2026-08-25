@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-export type ViewMode = 'layered' | 'modules' | 'functions';
+export type ViewMode = 'modules' | 'functions';
 export type ListType = 'functions' | 'calls' | 'files' | 'modules';
 
 export type Selection =
@@ -9,10 +9,8 @@ export type Selection =
   | { type: 'edge'; from: string; to: string; kind: 'module' | 'fn' }
   | null;
 
-/** Current view: layered Mermaid overview/drilldown, or sigma force (modules/functions). */
-export const viewMode = writable<ViewMode>('layered');
-/** Module the Mermaid view is drilled into (null = overview). */
-export const focusModule = writable<string | null>(null);
+/** Current view: sigma force graph, at module or function level. */
+export const viewMode = writable<ViewMode>('modules');
 /** Module the force "functions" view is focused on (null = all functions). */
 export const forceFocus = writable<string | null>(null);
 /** What the detail panel is showing. */

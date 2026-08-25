@@ -1,9 +1,8 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import { buildIndex } from '$lib/graph/indexes';
-  import { viewMode, focusModule, forceFocus, selection, stageClick, plainLabels, coverage, allLabels, type ViewMode } from '$lib/graph/stores';
+  import { viewMode, forceFocus, selection, stageClick, plainLabels, coverage, allLabels, type ViewMode } from '$lib/graph/stores';
   import { onMount } from 'svelte';
-  import MermaidView from '$lib/components/MermaidView.svelte';
   import ForceView from '$lib/components/ForceView.svelte';
   import DetailPanel from '$lib/components/DetailPanel.svelte';
   import InsightsPanel from '$lib/components/InsightsPanel.svelte';
@@ -19,7 +18,7 @@
   // the machine whose tab is active — its "all" (whole-machine) view + code projects nest under it
   const activeMachine = $derived(data.machines.find((m) => m.name === data.currentMachine) ?? null);
 
-  let mode = $state<ViewMode>('layered');
+  let mode = $state<ViewMode>('modules');
   viewMode.subscribe((m) => (mode = m));
   let plain = $state(false);
   let cov = $state(false);
@@ -69,7 +68,8 @@
   onMount(() => {
     try {
       const s = JSON.parse(localStorage.getItem(LS) || '{}');
-      if (s.mode) viewMode.set(s.mode);
+      // 'layered' persists in older browsers' prefs; it is no longer a view.
+      if (s.mode === 'modules' || s.mode === 'functions') viewMode.set(s.mode);
       if (s.plain) plainLabels.set(true);
       if (s.cov) coverage.set(true);
       if (s.names) allLabels.set(true);
@@ -86,15 +86,9 @@
   });
 
   function setMode(m: ViewMode) {
-    if (m === 'layered' && mode !== 'layered') focusModule.set(null);
     forceFocus.set(null); // the toggle shows everything at this level
     viewMode.set(m);
   }
-  // The mermaid "layered" view is code-architecture only; a filesystem graph has no
-  // layer model, so land it on the force view instead of an empty layered diagram.
-  $effect(() => {
-    if (isFs && mode === 'layered') setMode('functions');
-  });
   function switchProject(name: string) {
     if (name === data.current) return;
     goto(`/?project=${encodeURIComponent(name)}`, { invalidateAll: true });
@@ -158,9 +152,6 @@
     </div>
   {/if}
   <span class="vsep"></span>
-  {#if !isFs}
-    <button class="seg" class:on={mode === 'layered'} onclick={() => setMode('layered')}>layered</button>
-  {/if}
   <button class="seg" class:on={mode === 'modules'} onclick={() => setMode('modules')}>{isFs ? 'folders' : 'modules'}</button>
   <button class="seg" class:on={mode === 'functions'} onclick={() => setMode('functions')}>{isFs ? 'files' : 'functions'}</button>
   {#if data.graph}<SearchBar graph={data.graph} />{/if}
@@ -198,13 +189,7 @@
           <div class="mlabel">Labels</div>
           <button class="mitem" class:on={plain} onclick={() => plainLabels.set(!plain)}>plain-English descriptions</button>
           <button class="mitem" class:on={cov} onclick={() => coverage.set(!cov)}>test-coverage colours</button>
-          {#if mode !== 'layered'}
-            <button class="mitem" class:on={names} onclick={() => allLabels.set(!names)}>all node names</button>
-          {/if}
-          {#if data.current}
-            <div class="mlabel">Export</div>
-            <a class="mitem" href="/export?project={encodeURIComponent(data.current)}" title="Download a self-contained offline HTML snapshot">⇩ offline HTML snapshot</a>
-          {/if}
+          <button class="mitem" class:on={names} onclick={() => allLabels.set(!names)}>all node names</button>
         </div>
       {/if}
     </div>
@@ -215,8 +200,6 @@
   <main>
     {#if !data.graph || !index}
       <div class="empty">No graph data. Run <code>node bin/codegraph.mjs extract</code>.</div>
-    {:else if mode === 'layered'}
-      {#key data.current}<MermaidView graph={data.graph} {index} />{/key}
     {:else}
       {#key data.current + mode}<ForceView graph={data.graph} level={mode === 'modules' ? 'module' : 'function'} />{/key}
     {/if}
