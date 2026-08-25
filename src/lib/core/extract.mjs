@@ -95,7 +95,41 @@ for (const sv of findSvelteFiles()) {
   }
 }
 
-const compilerOptions = { ...parsed.options, noEmit: true };
+// A tsconfig that `extends` a GENERATED file (SvelteKit writes .svelte-kit/tsconfig.json,
+// which is not checked in) silently loses that file's `paths`. Module resolution then fails
+// for every aliased import — `$lib/...` here — and the extract still succeeds, just with the
+// edges missing. Config-declared `paths` fill the gap; the warning names the case where they
+// are needed and absent.
+const extendsTarget = (() => {
+  try {
+    const raw = ts.readConfigFile(configPath, ts.sys.readFile).config;
+    const ext = raw && raw.extends;
+    if (!ext || typeof ext !== 'string' || !ext.startsWith('.')) return null;
+    const abs = path.resolve(path.dirname(configPath), ext);
+    return fs.existsSync(abs) || fs.existsSync(abs + '.json') ? null : ext;
+  } catch {
+    return null;
+  }
+})();
+const cfgPaths = CFG.paths && Object.keys(CFG.paths).length ? CFG.paths : null;
+if (extendsTarget && !cfgPaths) {
+  console.error(
+    `WARNING: ${CFG.tsconfig} extends "${extendsTarget}", which does not exist. Any path alias it\n` +
+      `         declares will not resolve, and every import using one is dropped from the graph.\n` +
+      `         Generate it, or declare the aliases under "paths" in codegraph.config.json.`
+  );
+}
+
+const compilerOptions = {
+  ...parsed.options,
+  noEmit: true,
+  ...(cfgPaths
+    ? {
+        baseUrl: parsed.options.baseUrl || CFG.pathsBaseUrl,
+        paths: { ...(parsed.options.paths || {}), ...cfgPaths }
+      }
+    : {})
+};
 const host = ts.createCompilerHost(compilerOptions);
 const _getSourceFile = host.getSourceFile.bind(host);
 host.getSourceFile = (fn, langVer, onErr, shouldCreate) => {

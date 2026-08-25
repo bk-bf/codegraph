@@ -14,6 +14,12 @@
  *   adrsDoc      string?  markdown file listing "ADR-NN: title" lines  (null)
  *   descriptions string?  curated descriptions json                    (null)
  *   godFunctions number   module size warning threshold                (40)
+ *   paths        Record<string,string[]>  extra tsconfig `paths` aliases, merged
+ *                over the ones the tsconfig resolves to. Needed when a project's
+ *                tsconfig `extends` a generated file that is not checked in
+ *                (SvelteKit's .svelte-kit/tsconfig.json holds `$lib`): without it
+ *                every aliased import resolves to nothing and the graph silently
+ *                loses those edges.                                    ({})
  *   group        { namespacePrefix?: string }  group-derivation rule
  *   layers       Record<string,number>  layer rank per group (higher depends on lower; -1 exempt)
  *   adrRules     AdrRule[]  declarative architecture rules (see analysis.mjs)
@@ -30,6 +36,7 @@ const DEFAULTS = {
   adrsDoc: null,
   descriptions: null,
   godFunctions: 40,
+  paths: {},
   group: {},
   layers: {},
   adrRules: []
@@ -53,6 +60,9 @@ export function loadConfig(projectDir) {
   cfg.descriptionsPath = cfg.descriptions ? path.join(root, cfg.descriptions) : null;
   // Path token used to decide if a file is a graph source, e.g. "/src/lib/".
   cfg.srcToken = `/${norm(cfg.srcDir)}/`;
+
+  // `paths` values are project-relative; TypeScript resolves them against baseUrl.
+  cfg.pathsBaseUrl = root;
 
   // group-of: first module segment, unless a namespacePrefix is set, in which
   // case `<prefix>/<x>/...` groups as `<x>` (e.g. game/services/Foo -> services).
