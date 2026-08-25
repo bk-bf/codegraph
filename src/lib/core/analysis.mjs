@@ -13,7 +13,24 @@
 import Graph from 'graphology';
 import { stronglyConnectedComponents } from 'graphology-components';
 
-/** Strip a project's module namespace prefix for display (e.g. game/services → services). */
+/**
+ * @typedef {import('../graph/types').RawGraph}   RawGraph
+ * @typedef {import('../graph/types').GraphNode}  GraphNode
+ * @typedef {import('../graph/types').ModuleNode} ModuleNode
+ * @typedef {import('../graph/types').AdrRule}    AdrRule
+ * @typedef {'error' | 'warn' | 'info'} Level
+ * @typedef {{ level: Level, rule: string, msg: string, module?: string, id?: string,
+ *             file?: string, line?: number }} Finding
+ * @typedef {{ graph: RawGraph, byId: Map<string, GraphNode>,
+ *             add: (level: Level, rule: string, msg: string, extra?: object) => void,
+ *             sm: (m: string) => string }} RuleContext
+ */
+
+/**
+ * Strip a project's module namespace prefix for display (e.g. game/services → services).
+ * @param {string} m
+ * @param {string | null} [prefix]
+ */
 export const shortMod = (m, prefix) => (prefix && m.startsWith(prefix + '/') ? m.slice(prefix.length + 1) : m);
 
 /**
@@ -21,6 +38,8 @@ export const shortMod = (m, prefix) => (prefix && m.startsWith(prefix + '/') ? m
  * `adrRules`; entries with a `type` are checked here, entries with
  * `checkable:false` are acknowledged (and only matter for adr-coverage).
  * Add a new rule type here once; every project can then use it from JSON.
+ *
+ * @type {Record<string, (r: AdrRule, ctx: RuleContext) => void>}
  */
 const ADR_RULE_TYPES = {
   // No node outside `module` may have a call edge into it (except allowFrom).
@@ -67,18 +86,25 @@ const ADR_RULE_TYPES = {
   }
 };
 
-/** Architecture rule checks. Returns { findings, errors, warnings, rules }. */
+/**
+ * Architecture rule checks. Returns { findings, errors, warnings, rules }.
+ * @param {RawGraph} graph
+ */
 export function runChecks(graph) {
   const cfg = graph.config || {};
   const layers = cfg.layers || {};
   const godFunctions = cfg.godFunctions ?? 40;
   const adrRules = cfg.adrRules || [];
   const prefix = cfg.namespacePrefix || null;
+  /** @param {string} m */
   const sm = (m) => shortMod(m, prefix);
 
+  /** @type {Map<string, GraphNode>} */
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  /** @type {Finding[]} */
   const findings = [];
-  const add = (level, rule, msg, extra) => findings.push({ level, rule, msg, ...extra });
+  /** @type {(level: Level, rule: string, msg: string, extra?: object) => void} */
+  const add = (level, rule, msg, extra) => void findings.push({ level, rule, msg, ...extra });
 
   // Module dependency graph: a Map for edge metadata + a graphology graph for SCC.
   const modOut = new Map();
@@ -101,7 +127,8 @@ export function runChecks(graph) {
     if (!mg.hasEdge(a, b)) mg.addEdge(a, b);
   }
   const groupMap = new Map(graph.moduleNodes.map((m) => [m.module, m.group]));
-  const groupOf = (m) => groupMap.get(m);
+  /** @param {string} m @returns {string} '' for a module with no moduleNodes entry, which no layer names. */
+  const groupOf = (m) => groupMap.get(m) ?? '';
 
   // 1. ADR rules (declarative, from project config)
   const adrRuleIds = [];
@@ -185,13 +212,18 @@ export function runChecks(graph) {
   return { findings, errors, warnings: findings.length - errors, rules };
 }
 
-/** Modules ranked as port candidates (e.g. TS→Rust): compute-heavy and low-coupling. */
+/**
+ * Modules ranked as port candidates (e.g. TS→Rust): compute-heavy and low-coupling.
+ * @param {RawGraph} graph
+ * @param {number} [limit]
+ */
 export function portCandidates(graph, limit = 15) {
   const cfg = graph.config || {};
   const prefix = cfg.namespacePrefix || null;
   const layers = cfg.layers || {};
   // "higher layers" = rank >= 2 (services and above), derived from project config.
   const HIGHER = new Set(Object.keys(layers).filter((g) => layers[g] >= 2));
+  /** @type {Map<string, { fns: number, loc: number, numeric: number, topFn: { name: string, numeric: number } | null }>} */
   const agg = new Map();
   for (const n of graph.nodes) {
     const a = agg.get(n.module) || { fns: 0, loc: 0, numeric: 0, topFn: null };
@@ -204,7 +236,7 @@ export function portCandidates(graph, limit = 15) {
   const cross = new Map();
   const groupMap = new Map(graph.moduleNodes.map((m) => [m.module, m.group]));
   for (const e of graph.moduleEdges) {
-    if (HIGHER.has(groupMap.get(e.to))) cross.set(e.from, (cross.get(e.from) || 0) + 1);
+    if (HIGHER.has(groupMap.get(e.to) ?? '')) cross.set(e.from, (cross.get(e.from) || 0) + 1);
   }
   return graph.moduleNodes
     .filter((m) => !['rust', 'dev'].includes(m.group))
@@ -237,18 +269,23 @@ const FUNCTION_MAX_LINES = 80;
  * Stack-specific best-practice recommendations (SvelteKit 5 + TS). Structural
  * rules live in runChecks; this is advisory. Returns ordered
  * { id, severity, title, rationale, findings:[{label,sub,nav}] }.
+ * @param {RawGraph} graph
  */
 export function recommendations(graph) {
   const prefix = (graph.config && graph.config.namespacePrefix) || null;
+  /** @param {string} m */
   const sm = (m) => shortMod(m, prefix);
+  /** @type {Map<string, number>} */
   const inDeg = new Map();
   for (const e of graph.edges) inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1);
+  /** @type {{ id: string, severity: Level, title: string, rationale: string, findings: object[] }[]} */
   const recs = [];
+  /** @param {GraphNode} n @param {string} sub */
   const nodeFind = (n, sub) => ({ label: n.short, sub, nav: ['node', n.id] });
 
   const legacy = graph.nodes
-    .filter((n) => n.kind === 'component' && n.legacyReactive > 0)
-    .sort((a, b) => b.legacyReactive - a.legacyReactive);
+    .filter((n) => n.kind === 'component' && (n.legacyReactive ?? 0) > 0)
+    .sort((a, b) => (b.legacyReactive ?? 0) - (a.legacyReactive ?? 0));
   if (legacy.length)
     recs.push({
       id: 'runes',
@@ -295,12 +332,17 @@ export function recommendations(graph) {
       findings: untested.map((n) => nodeFind(n, `${inDeg.get(n.id) || 0} callers · ${sm(n.module)}`))
     });
 
+  /** @type {Record<Level, number>} */
   const order = { error: 0, warn: 1, info: 2 };
   return recs.sort((a, b) => order[a.severity] - order[b.severity] || b.findings.length - a.findings.length);
 }
 
-/** Standalone private functions with no in-graph callers (dead-code candidates). */
+/**
+ * Standalone private functions with no in-graph callers (dead-code candidates).
+ * @param {RawGraph} graph
+ */
 export function orphans(graph) {
+  /** @type {Map<string, number>} */
   const inDeg = new Map();
   for (const e of graph.edges) inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1);
   return graph.nodes.filter(
@@ -330,15 +372,18 @@ const MAX_DUP_MODULES = 4;
 // them independently — flagging them is pure noise.
 const CONTRACT_METHOD_NAMES = new Set(['set', 'update', 'subscribe']);
 
+/** @param {RawGraph} graph */
 export function duplicates(graph) {
+  /** @type {Map<string, GraphNode[]>} */
   const byName = new Map();
   for (const n of graph.nodes) {
     if (n.kind !== 'function' || n.className) continue;
     if (n.short && n.short.includes('.')) continue; // object-literal method (dotted short name)
     if (n.nested) continue; // closure-scoped local — a shared generic name is not copy-paste
     if (CONTRACT_METHOD_NAMES.has(n.short)) continue; // store/observer contract — recurs by design
-    if (!byName.has(n.short)) byName.set(n.short, []);
-    byName.get(n.short).push(n);
+    const bucket = byName.get(n.short) ?? [];
+    if (!bucket.length) byName.set(n.short, bucket);
+    bucket.push(n);
   }
   const groups = [];
   for (const [name, nodes] of byName) {

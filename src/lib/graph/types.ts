@@ -21,6 +21,10 @@ export interface GraphNode {
   inDegree: number;
   outDegree: number;
   legacyReactive?: number;
+  /** Called at module top level (table builders, import-time wiring), so not dead code. */
+  moduleUsed?: boolean;
+  /** Declared inside another function — a closure-scoped local. */
+  nested?: boolean;
 }
 export interface GraphEdge {
   from: string;
@@ -38,10 +42,35 @@ export interface ModuleEdge {
   to: string;
   count: number;
 }
+/** A declarative architecture rule from the project's codegraph.config.json. */
+export interface AdrRule {
+  adr: string;
+  type?: string;
+  severity?: 'error' | 'warn' | 'info';
+  msg?: string;
+  module?: string;
+  allowFrom?: string[];
+  callee?: string;
+  callees?: string[];
+  checkable?: false;
+  [k: string]: unknown;
+}
+/** The slice of the project's config the extractor embeds, so analysis stays generic. */
+export interface GraphConfig {
+  layers?: Record<string, number>;
+  godFunctions?: number;
+  adrRules?: AdrRule[];
+  namespacePrefix?: string | null;
+}
 export interface RawGraph {
   generatedAt: string;
   project?: string;
   root: string;
+  /** Host that ran the extract, and the revision it was built from. */
+  host?: string;
+  commit?: string | null;
+  dirty?: boolean;
+  config?: GraphConfig;
   adrs: { id: string; title: string }[];
   stats: { files: number; functions: number; edges: number; modules: number };
   nodes: GraphNode[];
